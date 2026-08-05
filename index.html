@@ -388,55 +388,6 @@
   /* ── 활성화(사용 기간) ─────────────────────────────────────
      만료돼도 지난 기록·통계·내보내기는 그대로 열어둔다.
      새 감정 기록과 자동사고 점검만 막는다 */
-  /* ── 처음 여는 사람에게 보여주는 안내 ──────────────────────── */
-  .onboard {
-    position: fixed; inset: 0; z-index: 20; display: none;
-    background: #FCF9F3;
-    padding: calc(24px + env(safe-area-inset-top, 0px)) 20px calc(24px + env(safe-area-inset-bottom, 0px));
-  }
-  .onboard.show { display: flex; align-items: center; justify-content: center; }
-  .ob-card { width: 100%; max-width: 380px; text-align: center; }
-
-  .ob-art { height: 150px; display: flex; align-items: center; justify-content: center; margin-bottom: 28px; }
-  .ob-art svg { width: 132px; height: 132px; }
-
-  .ob-title { font-size: 21px; font-weight: 900; color: #463722; margin-bottom: 12px; }
-  .ob-body { font-size: 14.5px; line-height: 1.75; color: #82694A; white-space: pre-line; }
-  .ob-note {
-    font-size: 12px; line-height: 1.7; color: #A8927A;
-    margin-top: 14px; white-space: pre-line;
-  }
-
-  .ob-dots { display: flex; gap: 7px; justify-content: center; margin: 34px 0 22px; }
-  .ob-dots span {
-    width: 7px; height: 7px; border-radius: 50%; background: #E0D8CC;
-    transition: background 0.2s, width 0.2s;
-  }
-  .ob-dots span.on { background: #C8A050; width: 20px; border-radius: 4px; }
-
-  .ob-btns { display: flex; flex-direction: column; gap: 10px; align-items: center; }
-  .ob-next {
-    width: 100%; padding: 15px; border: none; border-radius: 12px;
-    background: #C8A050; color: #FFFFFF;
-    font-family: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .ob-next:active { transform: scale(0.98); }
-  .ob-skip {
-    border: none; background: none; color: #A8927A;
-    font-family: inherit; font-size: 13px; cursor: pointer; padding: 6px;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .ob-skip.hidden { visibility: hidden; }
-
-  /* 나중에 다시 볼 수 있게 월간 화면에 둔다 */
-  .guide-again {
-    display: block; margin: 14px auto 0; border: none; background: none;
-    font-family: inherit; font-size: 12px; color: #C8A050; font-weight: 700;
-    cursor: pointer; text-decoration: underline;
-    -webkit-tap-highlight-color: transparent;
-  }
-
   /* 홈 화면 설치 안내. 카톡 안의 브라우저로 열렸을 때도 여기로 알린다 */
   .install-bar {
     display: none;
@@ -895,8 +846,6 @@
     <div id="monthBody"></div>
     <div id="dayBox" class="day-box"></div>
 
-    <button class="guide-again" id="guideAgain">앱 설명 다시 보기</button>
-
     <div class="license-row hidden" id="licenseRow">
       <p class="until" id="licenseUntil"></p>
       <button class="again" id="licenseAgain">활성화 코드 다시 입력</button>
@@ -1121,20 +1070,6 @@
     <div class="sheet-btns">
       <button class="cancel" id="wipeCancel">취소</button>
       <button class="confirm" id="wipeConfirm">지우기</button>
-    </div>
-  </div>
-</div>
-
-<div class="onboard" id="onboard">
-  <div class="ob-card">
-    <div class="ob-art" id="obArt"></div>
-    <p class="ob-title" id="obTitle"></p>
-    <p class="ob-body" id="obBody"></p>
-    <p class="ob-note" id="obNote"></p>
-    <div class="ob-dots" id="obDots"></div>
-    <div class="ob-btns">
-      <button class="ob-next" id="obNext">다음</button>
-      <button class="ob-skip" id="obSkip">건너뛰기</button>
     </div>
   </div>
 </div>
@@ -2776,112 +2711,6 @@ renderMonth();
 applyLock();          // 저장된 만료일로 먼저 판단하고
 recheckLicense();     // 서명은 뒤에서 다시 확인한다
 activateFromLink();   // 활성화 링크로 열었으면 바로 활성화한다
-
-// ── 처음 여는 사람에게 보여주는 안내 ─────────────────────────
-// 1~3장의 문구는 reference 원본 그대로다. 4~5장은 앱 사용법이라 새로 썼다
-const ONBOARD_KEY = 'cbt_diary_onboard';
-
-const SLIDES = [
-  {
-    title: '감정 기록',
-    body: '지금 내 감정에 가장 가까운 것을\n골라보세요.',
-    note: '이렇게 이름을 붙이는 것만으로도\n감정의 강도가 줄어든다는 연구가 있어요.\n— 감정 명명화(affect labeling), UCLA',
-    art: '<circle cx="60" cy="60" r="40" fill="none" stroke="#F0E4DC" stroke-width="11"/>'
-       + '<path d="M60 20 A40 40 0 1 1 25 80" fill="none" stroke="#C86450" stroke-width="11" stroke-linecap="round"/>'
-       + '<circle cx="60" cy="60" r="9" fill="#C86450"/>'
-  },
-  {
-    title: '자동사고 점검',
-    body: '부정적인 생각이 자꾸 떠오른다면?\n그 자동사고, 정말 사실인지\n같이 점검해봐요.',
-    note: '',
-    art: '<rect x="16" y="26" width="88" height="54" rx="14" fill="none" stroke="#E0D8CC" stroke-width="6"/>'
-       + '<path d="M40 80 L40 96 L58 80" fill="none" stroke="#E0D8CC" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>'
-       + '<circle cx="55" cy="50" r="16" fill="none" stroke="#5F82B4" stroke-width="6"/>'
-       + '<path d="M67 62 L84 79" stroke="#5F82B4" stroke-width="6" stroke-linecap="round"/>'
-  },
-  {
-    title: '다시 써보기',
-    body: '떠올랐다고 다 사실은 아니에요.\n멈추고, 다시 써볼 수 있어요.',
-    note: '',
-    art: '<rect x="18" y="20" width="84" height="26" rx="8" fill="#FBEDE8"/>'
-       + '<path d="M28 33 L92 33" stroke="#C86450" stroke-width="4" stroke-linecap="round"/>'
-       + '<path d="M60 56 L60 76 M50 66 L60 78 L70 66" fill="none" stroke="#509E6E" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>'
-       + '<rect x="18" y="88" width="84" height="26" rx="8" fill="#EAF4ED" stroke="#9FCBAF" stroke-width="3"/>'
-  },
-  {
-    title: '주간 · 월간',
-    body: '쌓인 기록은 주간 그래프와\n월간 달력으로 볼 수 있어요.',
-    note: '해석은 하지 않아요.\n숫자와 그래프만 보여드려요.',
-    art: '<path d="M18 96 L102 96" stroke="#E0D8CC" stroke-width="4" stroke-linecap="round"/>'
-       + '<path d="M18 24 L18 96" stroke="#E0D8CC" stroke-width="4" stroke-linecap="round"/>'
-       + '<polyline points="30,74 50,44 70,60 92,32" fill="none" stroke="#C86450" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>'
-       + '<polyline points="30,86 50,80 70,84 92,68" fill="none" stroke="#509E6E" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>'
-  },
-  {
-    title: '기록 지키기',
-    body: '기록은 이 기기 안에만 저장돼요.\n서버로 보내지 않아요.',
-    note: '월간 화면에서 파일로 내보내 두면\n기기를 바꿔도 옮길 수 있어요.',
-    art: '<path d="M60 24 L60 68 M44 54 L60 72 L76 54" fill="none" stroke="#C8A050" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>'
-       + '<path d="M24 78 L24 98 L96 98 L96 78" fill="none" stroke="#E0D8CC" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>'
-  }
-];
-
-let slideAt = 0;
-
-function renderSlide() {
-  const s = SLIDES[slideAt];
-  document.getElementById('obArt').innerHTML =
-    '<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">' + s.art + '</svg>';
-  document.getElementById('obTitle').textContent = s.title;
-  document.getElementById('obBody').textContent = s.body;
-  document.getElementById('obNote').textContent = s.note;
-
-  const dots = document.getElementById('obDots');
-  dots.replaceChildren(...SLIDES.map((_, i) => {
-    const d = document.createElement('span');
-    if (i === slideAt) d.className = 'on';
-    return d;
-  }));
-
-  const last = slideAt === SLIDES.length - 1;
-  document.getElementById('obNext').textContent = last ? '시작하기' : '다음';
-  document.getElementById('obSkip').classList.toggle('hidden', last);
-}
-
-function openOnboard() {
-  slideAt = 0;
-  renderSlide();
-  document.getElementById('onboard').classList.add('show');
-}
-
-function closeOnboard() {
-  document.getElementById('onboard').classList.remove('show');
-  localStorage.setItem(ONBOARD_KEY, 'done');
-}
-
-document.getElementById('obNext').addEventListener('click', () => {
-  if (slideAt < SLIDES.length - 1) { slideAt++; renderSlide(); }
-  else closeOnboard();
-});
-document.getElementById('obSkip').addEventListener('click', closeOnboard);
-document.getElementById('guideAgain').addEventListener('click', openOnboard);
-
-// 손가락으로 넘기기
-(() => {
-  const el = document.getElementById('onboard');
-  let x0 = null;
-  el.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
-  el.addEventListener('touchend', e => {
-    if (x0 === null) return;
-    const dx = e.changedTouches[0].clientX - x0;
-    x0 = null;
-    if (Math.abs(dx) < 50) return;
-    if (dx < 0 && slideAt < SLIDES.length - 1) { slideAt++; renderSlide(); }
-    if (dx > 0 && slideAt > 0) { slideAt--; renderSlide(); }
-  }, { passive: true });
-})();
-
-if (localStorage.getItem(ONBOARD_KEY) !== 'done') openOnboard();
 
 // ── 홈 화면 설치 안내 ───────────────────────────────────────
 // 카톡 링크로 열면 카톡 안의 브라우저가 뜨는데, 거기서는 설치가 안 되고
