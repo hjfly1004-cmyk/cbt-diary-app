@@ -1,0 +1,2658 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>감정 기록</title>
+
+<!-- 홈 화면에 설치해서 앱처럼 쓰기 위한 것들 -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#FCF9F3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="감정 기록">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root { --accent: #C8A050; }   /* 선택한 감정 색이 들어온다 */
+
+  body {
+    font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+    background: #FCF9F3;
+    color: #463722;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 감정 색 틴트 — 불투명도만 전환하므로 배경이 튀지 않는다 */
+  .ambient {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    opacity: 0; transition: opacity 0.6s ease;
+  }
+  .ambient.on { opacity: 1; }
+
+  .container {
+    max-width: 480px; margin: 0 auto;
+    /* 홈 화면 앱으로 열면 상태표시줄·홈바에 가리므로 그만큼 띄운다 */
+    padding: calc(30px + env(safe-area-inset-top, 0px)) 20px calc(60px + env(safe-area-inset-bottom, 0px));
+    position: relative; z-index: 1;
+  }
+
+  /* Tabs */
+  .tabs { display: flex; justify-content: center; gap: 4px; margin-bottom: 24px; }
+  .tab {
+    border: none; background: transparent; font-family: inherit;
+    font-size: 14px; font-weight: 700; color: #A8927A;
+    padding: 8px 20px; border-bottom: 2px solid transparent;
+    cursor: pointer; transition: color 0.2s, border-color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab.active { color: #C8A050; border-bottom-color: #C8A050; }
+
+  .screen.hidden { display: none; }
+
+  /* Header */
+  .header { text-align: center; margin-bottom: 8px; }
+  .header h1 { font-size: 22px; font-weight: 900; color: #463722; margin: 0 0 8px 0; line-height: 1.4; }
+  .header .sub { font-size: 14px; color: #82694A; line-height: 1.6; }
+
+  /* Watch — 둥근 사각형 케이스 + 검은 화면 */
+  .watch-wrap { position: relative; width: 190px; height: 226px; margin: 54px auto 50px; }
+
+  .band-top, .band-bottom {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    width: 116px; height: 40px;
+  }
+  .band-top {
+    top: -34px; border-radius: 8px 8px 3px 3px;
+    background: linear-gradient(180deg, #EFE8DC 0%, #DED5C7 100%);
+  }
+  .band-bottom {
+    bottom: -34px; border-radius: 3px 3px 8px 8px;
+    background: linear-gradient(180deg, #DED5C7 0%, #EFE8DC 100%);
+  }
+
+  .case {
+    position: absolute; inset: 0; border-radius: 52px;
+    background: linear-gradient(155deg, #57514A 0%, #3B3630 46%, #2A2622 100%);
+    box-shadow: inset 0 1px 1px rgba(255,255,255,0.22), inset 0 -1px 2px rgba(0,0,0,0.4);
+  }
+
+  /* 디지털 크라운 — 돌리는 홈이 파인 원통 */
+  .crown {
+    position: absolute; right: -7px; top: 62px;
+    width: 9px; height: 30px; border-radius: 2px 4px 4px 2px;
+    background:
+      repeating-linear-gradient(180deg, rgba(0,0,0,0.32) 0 1px, transparent 1px 3px),
+      linear-gradient(90deg, #6A6259 0%, #C3B8A4 45%, #8A8177 100%);
+    transition: box-shadow 0.8s ease;
+  }
+  .side-btn {
+    position: absolute; right: -4px; top: 106px;
+    width: 6px; height: 34px; border-radius: 0 4px 4px 0;
+    background: linear-gradient(90deg, #4A443E 0%, #7C746A 100%);
+  }
+
+  /* 그림자 2개 고정 — 개수가 같아야 부드럽게 전환된다 */
+  .outer-glow {
+    position: absolute; inset: -12px; border-radius: 64px;
+    box-shadow: 0 0 30px rgba(200,160,80,0), 0 0 60px rgba(70,55,42,0.16);
+    transition: box-shadow 0.8s ease; pointer-events: none;
+  }
+
+  .watch-screen {
+    position: absolute; inset: 9px; border-radius: 45px; overflow: hidden;
+    background: radial-gradient(circle at 50% 45%, #17171B 0%, #08080A 70%);
+    transition: background 0.8s ease;
+    display: flex; flex-direction: column; align-items: center;
+    padding-top: 20px;
+  }
+
+  .clock {
+    font-size: 13px; font-weight: 700; letter-spacing: 0.5px;
+    color: #6E6A66; transition: color 0.8s ease;
+  }
+
+  .ring-zone { position: relative; width: 148px; height: 148px; margin-top: 6px; }
+  .ring-zone svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring-track { fill: none; stroke: #FFFFFF14; stroke-width: 8; }
+  .ring-fill {
+    fill: none; stroke: #6E6A66; stroke-width: 8; stroke-linecap: round;
+    stroke-dasharray: 100; stroke-dashoffset: 100;
+    transition: stroke-dashoffset 0.8s ease, stroke 0.8s ease, filter 0.8s ease;
+  }
+  .ring-center {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* 슬라이더를 끄는 동안에는 색이 바로 따라오게 */
+  .watch-wrap.dragging .watch-screen,
+  .watch-wrap.dragging .outer-glow,
+  .watch-wrap.dragging .crown,
+  .watch-wrap.dragging .clock,
+  .watch-wrap.dragging .ring-fill,
+  .watch-wrap.dragging .emotion-name,
+  .watch-wrap.dragging .emotion-level { transition-duration: 0.12s; }
+
+  .watch-idle { text-align: center; display: flex; flex-direction: column; align-items: center; }
+  .watch-idle .dot { width: 6px; height: 6px; border-radius: 50%; background: #4A4642; margin: 0 auto 12px; }
+  .watch-idle .text { font-size: 10px; color: #6E6A66; letter-spacing: 2px; }
+
+  .watch-pulse {
+    width: 30px; height: 30px; border-radius: 50%;
+    animation: pulseGlow 0.7s ease forwards;
+  }
+  .watch-result { text-align: center; animation: fadeInScale 0.5s ease; }
+  .watch-result .indicator { width: 12px; height: 12px; border-radius: 50%; margin: 0 auto 9px; }
+  .watch-result .emotion-name {
+    font-size: 26px; font-weight: 900; color: #9A948E; margin-bottom: 4px;
+    transition: color 0.8s ease;
+  }
+  .watch-result .emotion-level {
+    font-size: 11px; color: #6E6A66; letter-spacing: 1px;
+    transition: color 0.8s ease;
+  }
+
+  /* Emotion buttons */
+  .btn-group { margin-bottom: 18px; }
+  .btn-group .group-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 1px;
+    margin-bottom: 10px; text-align: center; transition: color 0.5s ease;
+  }
+  .btn-group.red .group-label { color: #C89888; }
+  .btn-group.green .group-label { color: #8FB89F; }
+  body.selected-red .btn-group.red .group-label { color: #C86450; }
+  body.selected-green .btn-group.green .group-label { color: #509E6E; }
+
+  .btn-row { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; }
+
+  .emotion-btn {
+    padding: 9px 15px; border-radius: 18px;
+    border: 1.5px solid #E0D8CC; background: #FFFFFF;
+    color: #82694A; font-size: 13px; font-weight: 400;
+    cursor: pointer; transition: all 0.25s ease;
+    font-family: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .emotion-btn:active { transform: scale(0.95); }
+  .emotion-btn.active { font-weight: 700; color: #463722; }
+
+  /* Intensity + save */
+  .record-card {
+    display: none;
+    margin-top: 22px;
+    background: #FFFFFF; border-radius: 16px; padding: 22px 20px;
+    border: 1px solid #E0D8CC;
+    box-shadow: 0 2px 12px rgba(70,55,42,0.06);
+    animation: fadeUp 0.5s ease;
+  }
+  .record-card.visible { display: block; }
+
+  .intensity-label {
+    font-size: 12px; color: #82694A; margin-bottom: 10px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .intensity-label .val { font-weight: 700; font-size: 17px; }
+
+  input[type=range] {
+    width: 100%; -webkit-appearance: none; appearance: none;
+    height: 6px; border-radius: 3px; background: #E8E0D4; outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #FFFFFF; border: 2.5px solid var(--accent); cursor: pointer;
+    box-shadow: 0 2px 5px rgba(70,55,42,0.15);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #FFFFFF; border: 2.5px solid var(--accent); cursor: pointer;
+  }
+  .range-ends {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: #A8927A; margin-top: 6px;
+  }
+
+  .save-btn {
+    width: 100%; margin-top: 18px; padding: 14px;
+    border: none; border-radius: 12px;
+    font-family: inherit; font-size: 15px; font-weight: 700;
+    color: #FFFFFF; background: #C8A050; cursor: pointer;
+    transition: transform 0.12s, background 0.3s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .save-btn:active { transform: scale(0.97); }
+
+  .saved-msg {
+    text-align: center; font-size: 12px; color: #509E6E;
+    margin-top: 14px; height: 16px; opacity: 0; transition: opacity 0.3s ease;
+  }
+  .saved-msg.show { opacity: 1; }
+
+  /* Entry list */
+  .list-section { margin-top: 36px; }
+  .list-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 2px; color: #A8927A;
+    text-align: center; margin-bottom: 14px;
+  }
+  .entry {
+    display: flex; align-items: center; gap: 12px;
+    background: #FFFFFF; border: 1px solid #E0D8CC;
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 8px;
+  }
+  .entry .swatch { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; }
+  .entry .when { flex: 0 0 auto; font-size: 11px; color: #A8927A; }
+  .entry .label { flex: 1; font-size: 14px; font-weight: 500; color: #463722; }
+  .entry .intensity { flex: 0 0 auto; font-size: 14px; font-weight: 700; }
+  .entry-empty { text-align: center; font-size: 13px; color: #A8927A; padding: 22px 0; }
+
+  /* 점검을 하다 만 기록 — 줄 아래에 이어서 할 수 있는 자리를 둔다 */
+  .entry-wrap { margin-bottom: 8px; }
+  .entry-wrap .entry { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: none; }
+  .resume-btn {
+    display: block; width: 100%; text-align: left;
+    border: 1px solid #E0D8CC; border-top: none;
+    border-radius: 0 0 12px 12px; background: #FAF6EF;
+    font-family: inherit; font-size: 12px; font-weight: 600; color: #A87F2E;
+    padding: 9px 14px 10px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .resume-btn:active { background: #F2EBDD; }
+
+  .entry .del {
+    flex: 0 0 auto; border: none; background: transparent; font-family: inherit;
+    font-size: 17px; line-height: 1; color: #D8CCB8;
+    padding: 4px 0 4px 8px; margin-left: -2px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .entry .del:active { color: #C86450; }
+
+  /* 삭제 확인 */
+  .sheet {
+    position: fixed; inset: 0; z-index: 10; padding: 20px;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(70,55,42,0.35);
+  }
+  .sheet.open { display: flex; }
+  .sheet-card {
+    width: 100%; max-width: 320px; background: #FFFFFF;
+    border-radius: 16px; padding: 22px 20px 18px;
+    box-shadow: 0 8px 30px rgba(70,55,42,0.22);
+    animation: fadeUp 0.25s ease;
+  }
+  .sheet-card h2 {
+    font-size: 16px; font-weight: 700; color: #463722;
+    text-align: center; margin-bottom: 16px;
+  }
+  /* 목록 한 줄(.entry)과 같은 모양을 쓰고 테두리·바탕만 바꾼다 */
+  .sheet-entry {
+    background: #FAF6EF; border: none; border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 18px;
+  }
+  .sheet-btns { display: flex; gap: 8px; }
+  .sheet-btns button {
+    flex: 1; padding: 13px; border: none; border-radius: 10px;
+    font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sheet-btns button:active { transform: scale(0.97); }
+  .sheet-btns .cancel { background: #F0EAE0; color: #82694A; }
+  .sheet-btns .confirm { background: #C86450; color: #FFFFFF; }
+  .sheet-btns .go { background: #C8A050; color: #FFFFFF; }
+
+  /* Weekly chart */
+  .chart-card {
+    background: #FFFFFF; border: 1px solid #E0D8CC; border-radius: 16px;
+    padding: 18px 14px 14px; box-shadow: 0 2px 12px rgba(70,55,42,0.06);
+    margin-top: 20px;
+  }
+  .chart-card svg { display: block; width: 100%; height: auto; }
+  .legend {
+    display: flex; justify-content: center; gap: 16px;
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid #F0EAE0;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #82694A; }
+  .legend-item .ldot { width: 9px; height: 9px; border-radius: 50%; }
+
+  /* Month calendar */
+  .month-nav {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .month-nav button {
+    border: none; background: transparent; font-family: inherit;
+    font-size: 20px; line-height: 1; color: #A8927A;
+    padding: 6px 12px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .month-nav button:disabled { color: #E8E0D4; cursor: default; }
+  .month-nav .month-label {
+    font-size: 20px; font-weight: 900; color: #463722;
+    min-width: 130px; text-align: center;
+  }
+
+  .cal-card {
+    background: #FFFFFF; border: 1px solid #E0D8CC; border-radius: 16px;
+    padding: 16px 12px 14px; box-shadow: 0 2px 12px rgba(70,55,42,0.06);
+    margin-top: 20px;
+  }
+  .cal-head, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-head { margin-bottom: 6px; }
+  .cal-head span { text-align: center; font-size: 10px; color: #A8927A; }
+
+  .cell {
+    aspect-ratio: 1 / 1; border-radius: 8px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px;
+  }
+  .cell.blank { visibility: hidden; }
+  .cell.none { background: #F7F3EC; }
+  .cell.none .d { color: #C0AE96; }
+  .cell.today { outline: 2px solid #C8A050; outline-offset: -2px; }
+  .cell.has { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .cell.sel { box-shadow: 0 0 0 3px #463722; }
+  .cell .d { font-size: 10px; line-height: 1; opacity: 0.8; }
+  .cell .v { font-size: 14px; font-weight: 700; line-height: 1; }
+
+  .cal-legend {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid #F0EAE0;
+  }
+  .cal-legend .legend-item { font-size: 11.5px; }
+
+  /* 달력에서 하루를 눌렀을 때 아래로 펼쳐지는 그날 기록 */
+  .day-box { margin-top: 24px; }
+  .day-box:empty { display: none; }
+
+  /* 한 달 통째로 지우기. 실수로 누르지 않게 눈에 띄지 않는 회색으로 둔다 */
+  .wipe-btn {
+    display: block; width: 100%; margin-top: 32px; padding: 12px;
+    border: none; border-top: 1px solid #E8E0D4; background: none;
+    font-family: inherit; font-size: 12px; color: #B5A28A;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .wipe-btn.hidden { display: none; }
+  .wipe-btn:active { color: #C86450; }
+
+  .sheet-note {
+    font-size: 13px; line-height: 1.65; color: #82694A;
+    text-align: center; margin-bottom: 18px;
+  }
+  .sheet-note .warn { color: #C86450; font-weight: 700; }
+
+  /* ── 활성화(사용 기간) ─────────────────────────────────────
+     만료돼도 지난 기록·통계·내보내기는 그대로 열어둔다.
+     새 감정 기록과 자동사고 점검만 막는다 */
+  .lock-banner {
+    display: none;
+    background: #FBEDE8; border: 1px solid #E8C0B0; border-radius: 14px;
+    padding: 16px 18px; margin-bottom: 22px; text-align: center;
+  }
+  .lock-banner.show { display: block; }
+  /* 링크로 활성화가 된 순간에만 잠깐 초록으로 */
+  .lock-banner.ok { background: #EAF4ED; border-color: #9FCBAF; }
+  .lock-banner.ok p { color: #3E7A54; margin-bottom: 0; }
+  .lock-banner p {
+    font-size: 13px; line-height: 1.7; color: #A8442E; margin-bottom: 12px;
+    white-space: pre-line;   /* 안내 문구의 줄바꿈을 살린다 */
+  }
+  .lock-banner button {
+    padding: 11px 20px; border: none; border-radius: 10px;
+    background: #C86450; color: #FFFFFF;
+    font-family: inherit; font-size: 13px; font-weight: 700;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .lock-banner button:active { transform: scale(0.97); }
+
+  .emotion-btn:disabled { opacity: 0.45; cursor: default; }
+  .emotion-btn:disabled:active { transform: none; }
+
+  /* 활성화 코드 입력 */
+  #actInput {
+    width: 100%; border: 1.5px solid #E0D8CC; border-radius: 10px;
+    padding: 11px 13px; font-family: inherit; font-size: 13px; color: #463722;
+    outline: none; resize: vertical; min-height: 84px; line-height: 1.5;
+    word-break: break-all; margin-bottom: 10px;
+  }
+  #actInput:focus { border-color: #C8A050; }
+  .act-msg { font-size: 12.5px; text-align: center; min-height: 17px; margin-bottom: 14px; color: #509E6E; }
+  .act-msg.err { color: #C86450; }
+
+  /* 월간 화면에 남은 기간을 조용히 보여준다 */
+  .license-row {
+    margin-top: 32px; padding-top: 20px; border-top: 1px solid #E8E0D4;
+    text-align: center;
+  }
+  .license-row.hidden { display: none; }
+  .license-row .until { font-size: 12px; color: #A8927A; line-height: 1.7; }
+  .license-row .until b { color: #82694A; font-weight: 700; }
+  .license-row .again {
+    margin-top: 6px; border: none; background: none;
+    font-family: inherit; font-size: 12px; color: #C8A050; font-weight: 700;
+    cursor: pointer; text-decoration: underline;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 전체 기록 백업. 지우기 버튼보다 위에 둬서 먼저 눈에 띄게 한다 */
+  .backup {
+    margin-top: 32px; padding-top: 22px; border-top: 1px solid #E8E0D4;
+  }
+  .backup-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 2px;
+    color: #A8927A; text-align: center; margin-bottom: 8px;
+  }
+  .backup-desc {
+    font-size: 12px; line-height: 1.65; color: #A8927A;
+    text-align: center; margin-bottom: 14px;
+  }
+  .backup-btns { display: flex; gap: 8px; }
+  .backup-btns button {
+    flex: 1; padding: 12px; border-radius: 10px;
+    border: 1.5px solid #E0D8CC; background: #FFFFFF;
+    font-family: inherit; font-size: 13px; font-weight: 700; color: #82694A;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .backup-btns button:active { transform: scale(0.97); }
+  .backup-msg {
+    font-size: 12px; line-height: 1.6; text-align: center;
+    margin-top: 12px; min-height: 16px; color: #509E6E;
+  }
+  .backup-msg.err { color: #C86450; }
+
+  /* ── 자동사고 점검 ─────────────────────────────────────────
+     모양은 reference/thought_check.html에서 옮겨왔다.
+     이름이 겹치는 것(.card → .chk-card, .btn → .chk-btn)은 바꿔서 쓴다 */
+  .tabs.hidden { display: none; }
+  #screenCheck .hidden { display: none; }
+
+  .progress { display: flex; gap: 6px; justify-content: center; margin: 18px 0; }
+  .progress .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #E0D8CC; transition: background 0.2s;
+  }
+  .progress .dot.active { background: #C8A050; }
+
+  /* 이미 받은 감정·세기는 다시 묻지 않고 보여주기만 한다 */
+  .chk-context {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    font-size: 13px; font-weight: 700; margin-bottom: 14px;
+  }
+  .chk-context .cdot { width: 9px; height: 9px; border-radius: 50%; }
+
+  .chk-card {
+    background: #FFFFFF; border-radius: 16px; padding: 22px 20px;
+    margin-bottom: 16px; border: 1px solid #E0D8CC;
+    box-shadow: 0 2px 12px rgba(70,55,42,0.06);
+    animation: fadeUp 0.45s ease;
+  }
+  .chk-card h2 { font-size: 16px; font-weight: 700; display: inline; vertical-align: middle; }
+  .chk-card h2.gold { color: #C8A050; }
+  .chk-card h2.green { color: #509E6E; }
+  .chk-card h2.coral { color: #C86450; }
+  .chk-card h2.blue { color: #5F82B4; }
+  .chk-card .desc { font-size: 13px; color: #82694A; margin: 8px 0 16px; line-height: 1.55; }
+
+  .step-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 12px;
+    color: #FFFFFF; font-size: 13px; font-weight: 700; margin-right: 8px;
+  }
+  .step-badge.gold { background: #C8A050; }
+  .step-badge.green { background: #509E6E; }
+  .step-badge.coral { background: #C86450; }
+  .step-badge.blue { background: #5F82B4; }
+
+  .chk-card textarea, .chk-card input[type=text] {
+    width: 100%; border: 1.5px solid #E0D8CC; border-radius: 10px;
+    padding: 12px 14px; font-family: inherit; font-size: 14px; color: #463722;
+    resize: none; outline: none; transition: border 0.15s;
+  }
+  .chk-card textarea:focus, .chk-card input[type=text]:focus { border-color: #C8A050; }
+  .chk-card textarea { min-height: 64px; line-height: 1.5; }
+
+  .chk-btn {
+    width: 100%; padding: 14px; margin-top: 12px;
+    border: none; border-radius: 12px;
+    font-family: inherit; font-size: 15px; font-weight: 700; color: #FFFFFF;
+    cursor: pointer; transition: transform 0.12s, opacity 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .chk-btn:active { transform: scale(0.97); }
+  .chk-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .chk-btn.gold { background: #C8A050; box-shadow: 0 4px 14px rgba(200,160,80,0.3); }
+  .chk-btn.green { background: #509E6E; box-shadow: 0 4px 14px rgba(80,150,110,0.3); }
+  .chk-btn.coral { background: #C86450; box-shadow: 0 4px 14px rgba(200,100,80,0.3); }
+  .chk-btn.blue { background: #5F82B4; box-shadow: 0 4px 14px rgba(95,130,180,0.3); }
+  .chk-btn.outline {
+    background: transparent; color: #82694A;
+    border: 1.5px solid #E0D8CC; box-shadow: none; margin-top: 8px;
+  }
+
+  /* 누르면 쓴 데까지 저장된다는 걸 글자로 알린다 */
+  .chk-exit {
+    display: block; width: 100%; margin-top: 14px;
+    border: none; background: none; font-family: inherit;
+    font-size: 12.5px; color: #A8927A; text-decoration: underline;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+
+  .check-q { font-size: 13.5px; color: #463722; font-weight: 600; margin-bottom: 8px; line-height: 1.5; }
+  .hint { font-size: 12px; color: #A8927A; margin-bottom: 4px; line-height: 1.5; }
+  .hint-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+
+  /* 인지오류 */
+  .err-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .err-chip {
+    font-size: 12.5px; padding: 7px 12px; border-radius: 16px;
+    border: 1.5px solid #E0D8CC; background: #FFFFFF; color: #82694A;
+    cursor: pointer; transition: all 0.12s; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .err-chip:active { transform: scale(0.95); }
+  .err-chip.sel { background: #F2EBDD; border-color: #C8A050; color: #8A6E32; font-weight: 600; }
+
+  .glossary-btn {
+    flex: 0 0 auto; border: none; background: transparent;
+    color: #C8A050; font-family: inherit; font-size: 12px; font-weight: 700;
+    cursor: pointer; padding: 2px 0; white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .glossary {
+    display: none; max-height: 250px; overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #F5F0E6; border-radius: 10px; padding: 12px 14px; margin-top: 10px;
+  }
+  .glossary.show { display: block; }
+  .g-item + .g-item { margin-top: 10px; padding-top: 10px; border-top: 1px solid #E4DCCC; }
+  .g-item b { display: block; font-size: 12.5px; color: #8A6E32; font-weight: 700; margin-bottom: 2px; }
+  .g-item span { font-size: 12px; color: #6B5533; line-height: 1.6; }
+  .g-item.sel b::after { content: ' ✓'; color: #C8A050; }
+
+  /* 떨어져서 보기 — 상황과 그때 떠오른 생각을 떼어 놓고 보여준다 */
+  .phone-mock { background: #F5F0E6; border-radius: 14px; padding: 16px; margin: 4px 0 14px; }
+  .phone-input-row {
+    background: #FFFFFF; border: 1px solid #E0D8CC; border-radius: 10px;
+    padding: 11px 14px; font-size: 14px; color: #82694A; margin-bottom: 2px;
+  }
+  .phone-input-row .situation { color: #463722; font-weight: 500; }
+  .suggest-label { text-align: center; font-size: 11px; font-weight: 600; color: #B89050; margin: 7px 0; }
+  .suggest-label .arrow { display: block; font-size: 16px; color: #C8A050; line-height: 1; margin-bottom: 2px; }
+  .suggest {
+    background: #FFFFFF; border: 1.5px solid #E8C98A; border-radius: 10px;
+    padding: 12px 14px; font-size: 15px; font-weight: 700; color: #C86450;
+    text-align: center; animation: popIn 0.4s ease;
+  }
+
+  /* 따져보기 — 최악·최상·현실적 */
+  .outcome-row { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+  .outcome-row .lab { flex: 0 0 40px; font-size: 11.5px; font-weight: 700; text-align: right; }
+  .outcome-row .lab.worst { color: #C86450; }
+  .outcome-row .lab.best { color: #509E6E; }
+  .outcome-row .lab.real { color: #A87F2E; }
+  .outcome-row input[type=text] { padding: 10px 12px; font-size: 13.5px; }
+  .outcome-row input.real-in { border-color: #EBD9A8; background: #FDFAF2; }
+
+  /* 결과 — 문장 바꾸기 */
+  .transform-box { margin: 6px 0 4px; }
+  .old-line {
+    background: #FBEDE8; border-radius: 10px; padding: 13px 15px;
+    font-size: 14px; color: #C86450;
+    text-decoration: line-through; text-decoration-color: rgba(200,100,80,0.5);
+    margin-bottom: 8px;
+  }
+  .old-line .mini { display: block; font-size: 10px; color: #C89888; margin-bottom: 3px; text-decoration: none; font-weight: 600; }
+  .arrow-down { text-align: center; font-size: 22px; color: #509E6E; margin: 2px 0 8px; }
+  .new-line {
+    background: #EAF4ED; border: 1.5px solid #9FCBAF; border-radius: 10px;
+    padding: 14px 15px; font-size: 15px; font-weight: 700; color: #3E7A54;
+    animation: popIn 0.5s ease;
+  }
+  .new-line .mini { display: block; font-size: 10px; color: #6FA982; margin-bottom: 3px; font-weight: 600; }
+
+  .result-msg {
+    margin-top: 18px; padding: 16px; border-radius: 12px; background: #F5F0E6;
+    line-height: 1.7; font-size: 13.5px; color: #5A4A38;
+  }
+  .result-msg strong { color: #C8A050; }
+  .tip {
+    margin-top: 14px; padding: 14px 16px; border-radius: 12px;
+    border: 1.5px dashed #E0D8CC; font-size: 13px; color: #82694A;
+    line-height: 1.6; text-align: center;
+  }
+
+  /* 점검 후 감정 */
+  .emo-block { margin: 4px 0 8px; }
+  .emo-cat { margin-bottom: 12px; }
+  .emo-cat-label { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 7px; }
+  .emo-cat-label.neg { color: #C86450; }
+  .emo-cat-label.pos { color: #509E6E; }
+  .emo-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .emo-chip {
+    font-size: 13px; padding: 7px 13px; border-radius: 16px;
+    border: 1.5px solid #E0D8CC; background: #FFFFFF; color: #82694A;
+    cursor: pointer; transition: all 0.12s; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .emo-chip:active { transform: scale(0.95); }
+  .emo-chip.sel-neg { background: #FBEDE8; border-color: #D98E78; color: #C04E38; font-weight: 600; }
+  .emo-chip.sel-pos { background: #EAF4ED; border-color: #8FC2A4; color: #3E7A54; font-weight: 600; }
+
+  .intensity-wrap { margin-top: 14px; display: none; }
+  .intensity-wrap.show { display: block; }
+
+  .emo-compare { margin: 6px 0 4px; }
+  .emo-cmp-col { border-radius: 12px; padding: 13px 15px; margin-bottom: 8px; }
+  .emo-cmp-col.before { background: #FBEDE8; }
+  .emo-cmp-col.after { background: #EAF4ED; border: 1.5px solid #9FCBAF; }
+  .emo-cmp-label { font-size: 10px; font-weight: 700; margin-bottom: 7px; }
+  .emo-cmp-col.before .emo-cmp-label { color: #C89888; }
+  .emo-cmp-col.after .emo-cmp-label { color: #6FA982; }
+  .emo-cmp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .emo-cmp-tag { font-size: 13px; padding: 5px 11px; border-radius: 14px; background: #FFFFFF; font-weight: 600; }
+  .emo-cmp-col.before .emo-cmp-tag { color: #C04E38; }
+  .emo-cmp-col.after .emo-cmp-tag { color: #3E7A54; }
+  .emo-cmp-tag .int { opacity: 0.7; font-weight: 700; margin-left: 3px; }
+  .emo-cmp-empty { font-size: 13px; color: #A8927A; font-style: italic; }
+  .emo-cmp-arrow { text-align: center; font-size: 20px; color: #509E6E; margin: 1px 0 7px; }
+
+  /* 다시 읽기 — 쓴 것만 한 줄씩 보여준다 */
+  .rev-field { margin-top: 16px; }
+  .rev-field .k { font-size: 11px; font-weight: 700; color: #A8927A; letter-spacing: 0.5px; margin-bottom: 5px; }
+  .rev-field .v {
+    font-size: 13.5px; color: #463722; line-height: 1.6; white-space: pre-wrap;
+    background: #FAF6EF; border-radius: 10px; padding: 11px 13px;
+  }
+  .rev-field .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rev-field .tags span {
+    font-size: 12.5px; padding: 6px 11px; border-radius: 14px;
+    background: #F2EBDD; color: #8A6E32; font-weight: 600;
+  }
+  .rev-outcome { display: flex; gap: 9px; margin-bottom: 6px; font-size: 13px; line-height: 1.5; }
+  .rev-outcome .lab { flex: 0 0 40px; font-size: 11.5px; font-weight: 700; text-align: right; padding-top: 2px; }
+  .rev-outcome .lab.worst { color: #C86450; }
+  .rev-outcome .lab.best { color: #509E6E; }
+  .rev-outcome .lab.real { color: #A87F2E; }
+  .rev-outcome .t { flex: 1; color: #463722; }
+
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.94); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes fadeInScale {
+    from { opacity: 0; transform: scale(0.7); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes pulseGlow {
+    0% { transform: scale(0.3); opacity: 0.2; }
+    50% { transform: scale(1.8); opacity: 0.55; }
+    100% { transform: scale(1); opacity: 0; }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<div class="ambient" id="ambient"></div>
+
+<div class="container">
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" id="tabRecord">기록</button>
+    <button class="tab" id="tabWeek">주간</button>
+    <button class="tab" id="tabMonth">월간</button>
+  </div>
+
+  <!-- ── 기록 화면 ─────────────────────────────── -->
+  <section class="screen" id="screenRecord">
+
+    <div class="header">
+      <h1>감정 기록</h1>
+      <p class="sub">지금 내 감정에 가장 가까운 것을 골라보세요</p>
+    </div>
+
+    <div class="lock-banner" id="lockBanner">
+      <p id="lockText"></p>
+      <button id="lockOpen">활성화 코드 입력</button>
+    </div>
+
+    <div class="watch-wrap">
+      <div class="band-top"></div>
+      <div class="band-bottom"></div>
+      <div class="case">
+        <div class="outer-glow" id="outerGlow"></div>
+        <div class="watch-screen" id="watchScreen">
+          <div class="clock" id="watchClock">--:--</div>
+          <div class="ring-zone">
+            <svg viewBox="0 0 148 148">
+              <circle class="ring-track" cx="74" cy="74" r="66"/>
+              <circle class="ring-fill" id="ringFill" cx="74" cy="74" r="66" pathLength="100"/>
+            </svg>
+            <div class="ring-center">
+              <div class="watch-idle" id="watchIdle">
+                <div class="dot"></div>
+                <div class="text">아래에서 선택</div>
+              </div>
+              <div class="watch-pulse" id="watchPulse" style="display:none;"></div>
+              <div class="watch-result" id="watchResult" style="display:none;">
+                <div class="indicator" id="resultIndicator"></div>
+                <div class="emotion-name" id="resultName"></div>
+                <div class="emotion-level" id="resultLevel"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="crown" id="crown"></div>
+      <div class="side-btn"></div>
+    </div>
+
+    <div class="buttons">
+      <div class="btn-group red">
+        <p class="group-label">지금 불편한 감정이 있다면</p>
+        <div class="btn-row" id="negBtns"></div>
+      </div>
+      <div class="btn-group green">
+        <p class="group-label">괜찮은 감정이 있다면</p>
+        <div class="btn-row" id="posBtns"></div>
+      </div>
+    </div>
+
+    <div class="record-card" id="recordCard">
+      <div class="intensity-label">
+        <span>그 감정의 세기</span>
+        <span class="val" id="intensityVal">5</span>
+      </div>
+      <input type="range" min="0" max="10" step="1" value="5" id="intensityRange">
+      <div class="range-ends"><span>0</span><span>10</span></div>
+      <button class="save-btn" id="saveBtn">기록하기</button>
+      <p class="saved-msg" id="savedMsg">기록했어요</p>
+    </div>
+
+    <div class="list-section">
+      <p class="list-title">오늘 기록한 감정</p>
+      <div id="entryList"></div>
+    </div>
+
+  </section>
+
+  <!-- ── 주간 화면 ─────────────────────────────── -->
+  <section class="screen hidden" id="screenWeek">
+    <div class="header">
+      <h1>최근 7일</h1>
+      <p class="sub" id="weekRange"></p>
+    </div>
+    <div id="weekBody"></div>
+  </section>
+
+  <!-- ── 월간 화면 ─────────────────────────────── -->
+  <section class="screen hidden" id="screenMonth">
+    <div class="month-nav">
+      <button id="monthPrev">‹</button>
+      <span class="month-label" id="monthLabel"></span>
+      <button id="monthNext">›</button>
+    </div>
+    <div id="monthBody"></div>
+    <div id="dayBox" class="day-box"></div>
+
+    <div class="license-row hidden" id="licenseRow">
+      <p class="until" id="licenseUntil"></p>
+      <button class="again" id="licenseAgain">활성화 코드 다시 입력</button>
+    </div>
+
+    <!-- 백업은 보고 있는 달이 아니라 전체 기록이 대상이다 -->
+    <div class="backup">
+      <p class="backup-title">전체 기록 백업</p>
+      <p class="backup-desc">기록은 이 브라우저에만 저장돼요.<br>파일로 내보내 두면 기기를 바꿔도 옮길 수 있어요.</p>
+      <div class="backup-btns">
+        <button id="exportBtn">파일로 내보내기</button>
+        <button id="importBtn">파일에서 가져오기</button>
+      </div>
+      <p class="backup-msg" id="backupMsg"></p>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+
+    <button class="wipe-btn hidden" id="wipeBtn"></button>
+  </section>
+
+  <!-- ── 자동사고 점검 화면 ────────────────────────────
+       문구는 reference/thought_check.html에서 그대로 옮겼다.
+       감정·강도는 이미 받았으므로 다시 묻지 않고 위에 보여만 준다 -->
+  <section class="screen hidden" id="screenCheck">
+
+    <div class="header">
+      <h1>자동사고 점검</h1>
+      <p class="sub">부정적인 생각이 자꾸 떠오른다면?<br>그 자동사고, 정말 사실인지 같이 점검해봐요.</p>
+    </div>
+
+    <div class="progress">
+      <div class="dot" id="chkDot0"></div>
+      <div class="dot" id="chkDot1"></div>
+      <div class="dot" id="chkDot2"></div>
+      <div class="dot" id="chkDot3"></div>
+      <div class="dot" id="chkDot4"></div>
+    </div>
+
+    <div class="chk-context" id="chkContext"></div>
+
+    <!-- ① 알아차리기 -->
+    <div class="chk-card hidden" id="chk1">
+      <span class="step-badge gold">1</span>
+      <h2 class="gold">알아차리기</h2>
+      <p class="desc">최근에 어떤 상황에서, 머릿속에 어떤 문장이 자동으로 떠올랐나요?</p>
+
+      <p class="hint">상황</p>
+      <input type="text" id="chkSituation" placeholder="예: 카톡을 보냈는데 답이 없다" style="margin-bottom:16px;">
+
+      <p class="hint">그때 자동으로 떠오른 생각</p>
+      <textarea id="chkAutoThought" placeholder="예: 나한테 화났나 봐" style="margin-bottom:16px;"></textarea>
+
+      <p class="hint hint-row">
+        <span>어떤 인지오류에 가까울까요? 해당되는 것을 <b>모두</b> 골라보세요.</span>
+        <button type="button" class="glossary-btn" id="chkGlossaryBtn">설명 보기</button>
+      </p>
+      <div class="err-chips" id="chkErrChips"></div>
+      <div class="glossary" id="chkGlossary"></div>
+
+      <button class="chk-btn gold" id="chkBtn1" disabled>다음 →</button>
+      <button class="chk-exit">여기까지 저장하고 나가기</button>
+    </div>
+
+    <!-- ② 떨어져서 보기 -->
+    <div class="chk-card hidden" id="chk2">
+      <span class="step-badge coral">2</span>
+      <h2 class="coral">떨어져서 보기</h2>
+      <p class="desc">지금 떠올린 이 생각은 머리가 자동으로 띄운 자동사고예요. 그 자체가 사실인지는 아직 알 수 없어요.</p>
+
+      <div class="phone-mock">
+        <div class="phone-input-row"><span class="situation" id="chkEchoSituation">상황</span></div>
+        <div class="suggest-label"><span class="arrow">↓</span>자동으로 떠오른 생각</div>
+        <div class="suggest" id="chkEchoThought">생각</div>
+      </div>
+
+      <p class="check-q">이 문장을 보고 한 번 따라 말해보세요.<br>"이건 사실이 아니라, 그냥 <b>자동사고</b>다."</p>
+
+      <button class="chk-btn coral" id="chkBtn2">그렇게 보니 어때요? 다음 →</button>
+      <button class="chk-btn outline" id="chkBack2">← 다시 적기</button>
+      <button class="chk-exit">여기까지 저장하고 나가기</button>
+    </div>
+
+    <!-- ③ 따져보기 -->
+    <div class="chk-card hidden" id="chk3">
+      <span class="step-badge blue">3</span>
+      <h2 class="blue">따져보기</h2>
+      <p class="desc">이제 차분히 따져봐요. 정답을 쓰는 게 아니에요. 떠오르는 대로 적으면 돼요.</p>
+
+      <p class="check-q">① 이 생각이 사실이라는 <b>확실한 증거</b>가 있나요? 반박할 수 있는 증거도 찾아봅시다.</p>
+      <textarea id="chkEvidence" placeholder="예: 사실 화났다고 직접 들은 적은 없다" style="margin-bottom:14px;"></textarea>
+
+      <p class="check-q">② <b>다르게</b> 생각해 볼 수는 없을까요? (다른 가능성)</p>
+      <textarea id="chkAlternative" placeholder="예: 바빴을 수도, 못 봤을 수도, 답할 말을 고르는 중일 수도" style="margin-bottom:14px;"></textarea>
+
+      <p class="check-q">③ 그 생각이 <b>사실이었다면</b>, 결국 어떻게 될까요?</p>
+      <div class="outcome-row">
+        <span class="lab worst">최악</span>
+        <input type="text" id="chkWorst" placeholder="다시는 연락이 없다">
+      </div>
+      <div class="outcome-row">
+        <span class="lab best">최상</span>
+        <input type="text" id="chkBest" placeholder="금방 답이 오고 먼저 만나자고 한다">
+      </div>
+      <div class="outcome-row">
+        <span class="lab real">현실적</span>
+        <input type="text" id="chkRealistic" class="real-in" placeholder="조금 늦게 답이 오고, 평소처럼 지낸다">
+      </div>
+
+      <button class="chk-btn blue" id="chkBtn3">거의 다 왔어요. 다음 →</button>
+      <button class="chk-btn outline" id="chkBack3">← 이전</button>
+      <button class="chk-exit">여기까지 저장하고 나가기</button>
+    </div>
+
+    <!-- ④ 다시 써보기 -->
+    <div class="chk-card hidden" id="chk4">
+      <span class="step-badge green">4</span>
+      <h2 class="green">다시 써보기</h2>
+      <p class="desc">자동사고를 지우고, 더 사실에 가까운 새 문장을 써보세요. 차분하게, 나에게 말하듯.</p>
+
+      <textarea id="chkNewThought" placeholder="예: 아직 모르는 일이야. 바쁜가 보다 하고, 필요하면 나중에 물어보자"></textarea>
+
+      <button class="chk-btn green" id="chkBtn4" disabled>새 문장으로 바꾸기 →</button>
+      <button class="chk-btn outline" id="chkBack4">← 이전</button>
+      <button class="chk-exit">여기까지 저장하고 나가기</button>
+    </div>
+
+    <!-- 결과 -->
+    <div class="chk-card hidden" id="chkResult">
+      <h2 class="green" style="display:block; text-align:center; font-size:17px; margin-bottom:14px;">자동사고를 다시 썼어요</h2>
+
+      <div class="transform-box">
+        <div class="old-line"><span class="mini">머리가 자동으로 띄운 문장</span><span id="chkROld">—</span></div>
+        <div class="arrow-down">↓</div>
+        <div class="new-line"><span class="mini">내가 점검하고 다시 쓴 문장</span><span id="chkRNew">—</span></div>
+      </div>
+
+      <div style="margin-top:22px;">
+        <p class="hint" style="font-size:13px; color:#463722; font-weight:600;">다시 써본 지금, 가장 잘 느껴지는 감정 <b>하나</b>를 골라보세요. <span style="color:#A8927A; font-weight:400;">처음의 힘든 감정이 줄어든 걸 표현해도 되고, 편안해진 감정으로 바뀌었다면 그 감정을 골라도 좋아요.</span></p>
+        <div class="emo-block" id="chkEmoAfter"></div>
+        <div class="intensity-wrap" id="chkAfterWrap">
+          <div class="intensity-label"><span>그 감정의 세기</span><span class="val" id="chkAfterVal">5</span></div>
+          <input type="range" min="0" max="10" step="1" value="5" id="chkAfterRange">
+          <div class="range-ends"><span>0</span><span>10</span></div>
+        </div>
+      </div>
+
+      <div class="emo-compare hidden" id="chkCompareBox" style="margin-top:18px;">
+        <div class="emo-cmp-col before">
+          <div class="emo-cmp-label">점검 전 감정</div>
+          <div class="emo-cmp-tags" id="chkCmpBefore"></div>
+        </div>
+        <div class="emo-cmp-arrow">↓</div>
+        <div class="emo-cmp-col after">
+          <div class="emo-cmp-label">점검 후 감정</div>
+          <div class="emo-cmp-tags" id="chkCmpAfter"></div>
+        </div>
+      </div>
+      <button class="chk-btn green" id="chkCompareBtn" style="margin-top:14px;">감정 전·후 비교해보기 →</button>
+
+      <div class="result-msg">
+        방금 한 게 바로 <strong>자동사고 점검</strong>이에요. 한 번으로 마음이 확 바뀌진 않아요. 그런데 이걸 반복하면, 머리에 <strong>먼저 떠오르는 생각 자체</strong>가 조금씩 차분해져요. 연습할수록 익숙해지는 기술이에요.
+      </div>
+
+      <div class="tip">💡 떠올랐다고 다 사실은 아니에요.<br>멈추고, 다시 써볼 수 있어요.</div>
+
+      <button class="chk-btn gold" id="chkDone">기록으로 돌아가기</button>
+    </div>
+
+  </section>
+
+  <!-- ── 다 한 점검 다시 읽기 ────────────────────────── -->
+  <section class="screen hidden" id="screenReview">
+    <div class="header">
+      <h1>지난 점검</h1>
+      <p class="sub" id="revWhen"></p>
+    </div>
+
+    <div class="chk-context" id="revContext"></div>
+
+    <div class="chk-card" id="revCard">
+      <div class="transform-box">
+        <div class="old-line"><span class="mini">머리가 자동으로 띄운 문장</span><span id="revOld">—</span></div>
+        <div class="arrow-down">↓</div>
+        <div class="new-line"><span class="mini">내가 점검하고 다시 쓴 문장</span><span id="revNew">—</span></div>
+      </div>
+
+      <div id="revFields"></div>
+
+      <div class="emo-compare" style="margin-top:18px;">
+        <div class="emo-cmp-col before">
+          <div class="emo-cmp-label">점검 전 감정</div>
+          <div class="emo-cmp-tags" id="revCmpBefore"></div>
+        </div>
+        <div class="emo-cmp-arrow">↓</div>
+        <div class="emo-cmp-col after">
+          <div class="emo-cmp-label">점검 후 감정</div>
+          <div class="emo-cmp-tags" id="revCmpAfter"></div>
+        </div>
+      </div>
+
+      <button class="chk-btn gold" id="revBack">기록으로 돌아가기</button>
+    </div>
+  </section>
+
+</div>
+
+<div class="sheet" id="delSheet">
+  <div class="sheet-card">
+    <h2>이 기록을 지울까요?</h2>
+    <div class="entry sheet-entry" id="delPreview"></div>
+    <div class="sheet-btns">
+      <button class="cancel" id="delCancel">취소</button>
+      <button class="confirm" id="delConfirm">지우기</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="wipeSheet">
+  <div class="sheet-card">
+    <h2 id="wipeTitle"></h2>
+    <p class="sheet-note" id="wipeNote"></p>
+    <div class="sheet-btns">
+      <button class="cancel" id="wipeCancel">취소</button>
+      <button class="confirm" id="wipeConfirm">지우기</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="actSheet">
+  <div class="sheet-card">
+    <h2>활성화 코드 입력</h2>
+    <p class="sheet-note">센터에서 받은 코드를 그대로 붙여넣으세요.</p>
+    <textarea id="actInput" placeholder="받은 코드를 붙여넣기"></textarea>
+    <p class="act-msg" id="actMsg"></p>
+    <div class="sheet-btns">
+      <button class="cancel" id="actCancel">취소</button>
+      <button class="go" id="actConfirm">확인</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="importSheet">
+  <div class="sheet-card">
+    <h2 id="importTitle"></h2>
+    <p class="sheet-note" id="importNote"></p>
+    <div class="sheet-btns">
+      <button class="cancel" id="importCancel">취소</button>
+      <button class="go" id="importConfirm">가져오기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 힘든 감정이 기준보다 셀 때, 이어서 점검할지 물어본다 -->
+<div class="sheet" id="askSheet">
+  <div class="sheet-card">
+    <h2>이어서 자동사고를<br>점검해볼까요?</h2>
+    <div class="entry sheet-entry" id="askPreview"></div>
+    <div class="sheet-btns">
+      <button class="cancel" id="askLater">나중에</button>
+      <button class="go" id="askStart">해볼게요</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 감정 목록 (CLAUDE.md 확정본) ──────────────────────────────
+const EMOTIONS = [
+  { id:"anxiety",    label:"불안",   valence:"neg", color:"#E07060" },
+  { id:"fear",       label:"공포",   valence:"neg", color:"#C85548" },
+  { id:"down",       label:"울적",   valence:"neg", color:"#C86860" },
+  { id:"lethargy",   label:"무기력", valence:"neg", color:"#B07068" },
+  { id:"anger",      label:"분노",   valence:"neg", color:"#D05545" },
+  { id:"irritation", label:"짜증",   valence:"neg", color:"#CC6E5A" },
+  { id:"unfairness", label:"억울",   valence:"neg", color:"#D46850" },
+  { id:"selfblame",  label:"자책",   valence:"neg", color:"#C07068" },
+  { id:"disappoint", label:"실망",   valence:"neg", color:"#D47058" },
+
+  { id:"calm",       label:"편안함", valence:"pos", color:"#48A060" },
+  { id:"relief",     label:"안도감", valence:"pos", color:"#58B070" },
+  { id:"joy",        label:"기쁨",   valence:"pos", color:"#68C888" },
+  { id:"pride",      label:"뿌듯함", valence:"pos", color:"#5DAF7A" },
+  { id:"release",    label:"후련함", valence:"pos", color:"#4CAA65" },
+  { id:"gratitude",  label:"감사",   valence:"pos", color:"#50A868" },
+  { id:"excitement", label:"설렘",   valence:"pos", color:"#78D898" },
+];
+
+const NEG_LINE = '#C86450';
+const POS_LINE = '#509E6E';
+
+// ── 저장 (localStorage) ──────────────────────────────────────
+const STORAGE_KEY = 'cbt_diary_v1';
+
+function emptyStore() {
+  return { schemaVersion: 1, settings: { triggerThreshold: 5 }, entries: [] };
+}
+
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return emptyStore();
+    const data = JSON.parse(raw);
+    if (!data || data.schemaVersion !== 1 || !Array.isArray(data.entries)) return emptyStore();
+    if (!data.settings) data.settings = { triggerThreshold: 5 };
+    return data;
+  } catch (e) {
+    return emptyStore();
+  }
+}
+
+function saveStore(store) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+// 로컬 시간 기준 ISO 문자열 (예: 2026-07-31T14:32:11+09:00)
+function localISO(d) {
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const a = Math.abs(off);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+    + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
+    + sign + pad(Math.floor(a / 60)) + ':' + pad(a % 60);
+}
+
+function dateKeyOf(d) {
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+}
+
+function colorOf(emotionId) {
+  const e = EMOTIONS.find(x => x.id === emotionId);
+  return e ? e.color : '#A8927A';
+}
+
+function labelOf(emotionId) {
+  const e = EMOTIONS.find(x => x.id === emotionId);
+  return e ? e.label : '';
+}
+
+// ── 상태 ────────────────────────────────────────────────────
+let selected = null;
+let pulseTimer = null;   // 펄스가 끝난 뒤 결과를 띄우는 타이머
+
+// ── 시계 ────────────────────────────────────────────────────
+const watchScreen = document.getElementById('watchScreen');
+const ringFill = document.getElementById('ringFill');
+const ambient = document.getElementById('ambient');
+const watchWrap = document.querySelector('.watch-wrap');
+const SCREEN_IDLE_BG = 'radial-gradient(circle at 50% 45%, #17171B 0%, #08080A 70%)';
+
+// 화면 위쪽 시각. 실제 스마트워치처럼 늘 흐르게 둔다
+function tickClock() {
+  const n = new Date();
+  document.getElementById('watchClock').textContent = pad(n.getHours()) + ':' + pad(n.getMinutes());
+}
+tickClock();
+setInterval(tickClock, 15000);
+
+// 두 색을 t만큼 섞는다 (#rrggbb)
+function mix(from, to, t) {
+  const rgb = h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+  const f = rgb(from), o = rgb(to);
+  return '#' + [0,1,2].map(i =>
+    Math.round(f[i] + (o[i] - f[i]) * t).toString(16).padStart(2, '0')).join('');
+}
+
+// 강도 0~10 → 색의 진하기. 0에서도 옅게는 보이고, 10에서 가장 진하다
+function paintWatch(c, intensity) {
+  const t = Math.max(0, Math.min(10, intensity)) / 10;
+  const a = (lo, hi) => c + Math.round(lo + (hi - lo) * t).toString(16).padStart(2, '0').toUpperCase();
+  const px = (lo, hi) => (lo + (hi - lo) * t).toFixed(2) + 'px';
+
+  // 화면 전체 틴트
+  ambient.style.background =
+    'radial-gradient(ellipse at 50% 30%, ' + a(0x10, 0x4D) + ' 0%, ' + a(0x06, 0x1E) + ' 40%, transparent 70%)';
+
+  // 케이스 바깥 빛
+  document.getElementById('crown').style.boxShadow = '0 0 ' + px(4, 14) + ' ' + a(0x00, 0xAA);
+  document.getElementById('outerGlow').style.boxShadow =
+    '0 0 ' + px(30, 62) + ' ' + a(0x20, 0xB0) + ', 0 0 ' + px(60, 104) + ' ' + a(0x0A, 0x40);
+
+  // 검은 화면이라 강도가 셀수록 바탕이 감정 색으로 은은하게 달아오른다
+  watchScreen.style.background =
+    'radial-gradient(circle at 50% 45%, ' + mix('#17171B', c, 0.30 * t) + ' 0%, ' +
+    mix('#08080A', c, 0.10 * t) + ' 70%)';
+
+  // 링 게이지 — 12시부터 시계 방향으로 강도만큼 채운다
+  ringFill.style.strokeDashoffset = (100 - t * 100).toFixed(1);
+  ringFill.style.stroke = c;
+  ringFill.style.filter = 'drop-shadow(0 0 ' + px(2, 9) + ' ' + a(0x55, 0xEE) + ')';
+
+  // 검은 바탕에서는 밝을수록 세 보인다. 어두운 회색에서 감정 색 쪽으로 올린다
+  document.getElementById('watchClock').style.color = mix('#6E6A66', c, 0.15 + 0.85 * t);
+  document.getElementById('resultName').style.color = mix('#9A948E', c, 0.25 + 0.75 * t);
+  document.getElementById('resultLevel').style.color = mix('#6E6A66', c, 0.3 + 0.7 * t);
+
+  const indicator = document.getElementById('resultIndicator');
+  indicator.style.background = c;
+  indicator.style.boxShadow = '0 0 ' + px(10, 20) + ' ' + a(0x40, 0xCC);
+
+  // 선택된 감정 버튼
+  const activeBtn = document.querySelector('.emotion-btn.active');
+  if (activeBtn) {
+    activeBtn.style.border = '1.5px solid ' + a(0x66, 0xFF);
+    activeBtn.style.background = a(0x0A, 0x2E);
+    activeBtn.style.boxShadow = '0 2px 10px ' + a(0x1A, 0x55);
+  }
+}
+
+// ── 감정 버튼 ────────────────────────────────────────────────
+function createBtns(valence, containerId) {
+  const container = document.getElementById(containerId);
+  EMOTIONS.filter(e => e.valence === valence).forEach(e => {
+    const btn = document.createElement('button');
+    btn.className = 'emotion-btn';
+    btn.textContent = e.label;
+    btn.dataset.id = e.id;
+    btn.onclick = () => selectEmotion(e);
+    container.appendChild(btn);
+  });
+}
+createBtns('neg', 'negBtns');
+createBtns('pos', 'posBtns');
+
+function selectEmotion(e) {
+  selected = e;
+  const c = e.color;
+
+  clearTimeout(pulseTimer);   // 직전 선택의 타이머가 뒤늦게 뜨지 않게
+
+  document.body.className = e.valence === 'neg' ? 'selected-red' : 'selected-green';
+
+  // 배경은 그대로 두고 틴트 레이어의 불투명도만 올린다
+  ambient.classList.add('on');
+
+  document.querySelectorAll('.emotion-btn').forEach(btn => {
+    if (btn.dataset.id === e.id) {
+      btn.classList.add('active');
+      btn.style.color = '#463722';
+      // 테두리·배경·그림자는 paintWatch가 강도에 맞춰 칠한다
+    } else {
+      btn.classList.remove('active');
+      btn.style.border = '1.5px solid #E0D8CC';
+      btn.style.background = '#FFFFFF';
+      btn.style.color = '#A8927A';
+      btn.style.boxShadow = 'none';
+    }
+  });
+
+  // 선택 직후에는 원래 속도로 물들게
+  watchWrap.classList.remove('dragging');
+  paintWatch(c, Number(range.value));
+
+  document.getElementById('watchIdle').style.display = 'none';
+  document.getElementById('watchResult').style.display = 'none';
+
+  const pulse = document.getElementById('watchPulse');
+  pulse.style.display = 'block';
+  pulse.style.background = c;
+  pulse.style.boxShadow = '0 0 30px ' + c + '77';
+  pulse.style.animation = 'none';
+  void pulse.offsetWidth;
+  pulse.style.animation = 'pulseGlow 0.7s ease forwards';
+
+  pulseTimer = setTimeout(() => {
+    pulse.style.display = 'none';
+
+    document.getElementById('resultName').textContent = e.label;
+
+    const result = document.getElementById('watchResult');
+    result.style.display = 'block';
+    result.style.animation = 'none';
+    void result.offsetWidth;
+    result.style.animation = 'fadeInScale 0.5s ease';
+
+    updateLevelText();
+  }, 700);
+
+  const card = document.getElementById('recordCard');
+  card.classList.add('visible');
+  card.style.borderColor = c + '66';
+  document.getElementById('savedMsg').classList.remove('show');
+  paintRange();
+}
+
+// ── 강도 슬라이더 ────────────────────────────────────────────
+const range = document.getElementById('intensityRange');
+const intensityVal = document.getElementById('intensityVal');
+
+function paintRange() {
+  const c = selected ? selected.color : '#C8A050';
+  document.documentElement.style.setProperty('--accent', c);
+  const pct = (range.value / 10) * 100;
+  range.style.background =
+    'linear-gradient(90deg, ' + c + ' 0%, ' + c + ' ' + pct + '%, #E8E0D4 ' + pct + '%, #E8E0D4 100%)';
+  intensityVal.style.color = c;
+  document.getElementById('saveBtn').style.background = c;
+}
+
+function updateLevelText() {
+  document.getElementById('resultLevel').textContent = selected ? '세기 ' + range.value : '';
+}
+
+range.addEventListener('input', () => {
+  intensityVal.textContent = range.value;
+  paintRange();
+  updateLevelText();
+  if (selected) {
+    watchWrap.classList.add('dragging');
+    paintWatch(selected.color, Number(range.value));
+  }
+});
+range.addEventListener('change', () => watchWrap.classList.remove('dragging'));
+
+// ── 기록하기 ────────────────────────────────────────────────
+document.getElementById('saveBtn').addEventListener('click', () => {
+  if (!selected) return;
+  if (locked) return;   // 사용 기간이 아니면 새 기록은 남기지 않는다
+
+  const now = new Date();
+  const store = loadStore();
+
+  const entry = {
+    id: now.toISOString(),
+    createdAt: localISO(now),
+    dateKey: dateKeyOf(now),
+    hour: now.getHours(),
+    emotion: { id: selected.id, label: selected.label, valence: selected.valence },
+    intensity: Number(range.value),
+    thoughtRecord: null
+  };
+  store.entries.push(entry);
+
+  saveStore(store);
+  renderList();
+  renderWeek();
+  renderMonth();
+
+  const msg = document.getElementById('savedMsg');
+  msg.classList.add('show');
+  setTimeout(() => msg.classList.remove('show'), 1600);
+
+  resetWatch();
+
+  // 힘든 감정이 기준보다 세면 이어서 점검할지 물어본다
+  if (entry.emotion.valence === 'neg' && entry.intensity >= store.settings.triggerThreshold) {
+    openAskSheet(entry);
+  }
+});
+
+// ── 기록 목록 ───────────────────────────────────────────────
+function formatWhen(entry) {
+  const d = new Date(entry.id);
+  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+// 목록 한 줄과 삭제 확인창이 같은 모양을 쓴다
+function entryCells(en) {
+  const c = colorOf(en.emotion.id);
+
+  const sw = document.createElement('span');
+  sw.className = 'swatch';
+  sw.style.background = c;
+
+  const when = document.createElement('span');
+  when.className = 'when';
+  when.textContent = formatWhen(en);
+
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = labelOf(en.emotion.id);
+
+  const inten = document.createElement('span');
+  inten.className = 'intensity';
+  inten.style.color = c;
+  inten.textContent = en.intensity;
+
+  return [sw, when, label, inten];
+}
+
+// 기록 한 줄. 기록 화면과 달력에서 하루를 펼쳤을 때가 같이 쓴다
+function entryRow(en) {
+  const row = document.createElement('div');
+  row.className = 'entry';
+  entryCells(en).forEach(el => row.appendChild(el));
+
+  const del = document.createElement('button');
+  del.className = 'del';
+  del.textContent = '×';
+  del.setAttribute('aria-label', '지우기');
+  del.onclick = () => openDeleteSheet(en);
+  row.appendChild(del);
+
+  // 힘든 감정이면 세기와 상관없이 점검을 시작하거나 이어서 할 수 있고,
+  // 다 한 기록은 읽기만 하는 화면으로 다시 열어본다
+  const rec = en.thoughtRecord;
+  const done = rec && rec.status === 'done';
+  if (!done && en.emotion.valence !== 'neg') return row;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'entry-wrap';
+  wrap.appendChild(row);
+
+  // 다 한 점검은 만료 뒤에도 읽을 수 있다. 새로 하거나 이어서 쓰는 것만 막는다
+  if (!done && locked) return row;
+
+  const resume = document.createElement('button');
+  resume.className = 'resume-btn';
+  if (done) {
+    resume.textContent = '다시 읽어보기 →';
+    resume.onclick = () => openReview(en);
+  } else {
+    resume.textContent = rec ? '이어서 하기 →' : '자동사고 점검하기 →';
+    resume.onclick = () => openCheck(en);
+  }
+  wrap.appendChild(resume);
+  return wrap;
+}
+
+// 기록 화면에는 오늘 것만 쌓는다. 지난 기록은 월간 달력에서 날짜를 눌러서 본다
+function renderList() {
+  const box = document.getElementById('entryList');
+  const todayKey = dateKeyOf(new Date());
+  const entries = loadStore().entries.filter(en => en.dateKey === todayKey).reverse();
+
+  box.innerHTML = '';
+
+  if (entries.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'entry-empty';
+    empty.textContent = '아직 기록이 없어요';
+    box.appendChild(empty);
+    return;
+  }
+
+  entries.forEach(en => box.appendChild(entryRow(en)));
+}
+
+// ── 기록 지우기 ─────────────────────────────────────────────
+let pendingDeleteId = null;
+
+function openDeleteSheet(en) {
+  pendingDeleteId = en.id;
+  document.getElementById('delPreview').replaceChildren(...entryCells(en));
+  document.getElementById('delSheet').classList.add('open');
+}
+
+function closeDeleteSheet() {
+  pendingDeleteId = null;
+  document.getElementById('delSheet').classList.remove('open');
+}
+
+document.getElementById('delCancel').addEventListener('click', closeDeleteSheet);
+
+// 카드 바깥을 누르면 지우지 않고 닫는다
+document.getElementById('delSheet').addEventListener('click', e => {
+  if (e.target.id === 'delSheet') closeDeleteSheet();
+});
+
+document.getElementById('delConfirm').addEventListener('click', () => {
+  if (pendingDeleteId === null) return;
+  const store = loadStore();
+  store.entries = store.entries.filter(en => en.id !== pendingDeleteId);
+  saveStore(store);
+  closeDeleteSheet();
+  renderList();
+  renderWeek();
+  renderMonth();
+});
+
+// ── 주간 그래프 ─────────────────────────────────────────────
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+// 오늘 포함 최근 7일 (왼→오, 오늘이 오른쪽 끝)
+function last7Days() {
+  const today = new Date();
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    days.push({ date: d, dateKey: dateKeyOf(d), weekday: WEEKDAYS[d.getDay()] });
+  }
+  return days;
+}
+
+// 그 날 그 valence 기록 중 강도가 가장 높은 것 하나 (동점이면 나중 기록)
+function peakOf(entries, dateKey, valence) {
+  let best = null;
+  entries.forEach(en => {
+    if (en.dateKey !== dateKey) return;
+    if (!en.emotion || en.emotion.valence !== valence) return;
+    if (!best || en.intensity >= best.intensity) best = en;
+  });
+  if (!best) return null;
+  return { intensity: best.intensity, color: colorOf(best.emotion.id), label: labelOf(best.emotion.id) };
+}
+
+// 이어진 구간만 선으로 잇는다 (기록 없는 날은 끊김)
+function segmentsOf(points) {
+  const out = [];
+  let cur = [];
+  points.forEach(p => {
+    if (p) { cur.push(p); }
+    else { if (cur.length > 1) out.push(cur); cur = []; }
+  });
+  if (cur.length > 1) out.push(cur);
+  return out;
+}
+
+function buildChart(days, series) {
+  // 위아래 여백은 10점·0점의 감정 이름이 들어갈 만큼 잡는다
+  const W = 320, H = 230, padL = 26, padR = 16, padT = 24, padB = 44;
+  const x = i => padL + i * (W - padL - padR) / 6;
+  const y = v => padT + (10 - v) / 10 * (H - padT - padB);
+
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">';
+
+  // 격자선 + y 눈금
+  [0, 5, 10].forEach(v => {
+    s += '<line x1="' + padL + '" y1="' + y(v) + '" x2="' + (W - padR) + '" y2="' + y(v) +
+         '" stroke="#E0D8CC" stroke-width="1"/>';
+    s += '<text x="' + (padL - 7) + '" y="' + (y(v) + 3.5) +
+         '" text-anchor="end" font-size="10" fill="#A8927A">' + v + '</text>';
+  });
+
+  // 요일 라벨 (오른쪽 끝이 오늘)
+  days.forEach((d, i) => {
+    const isToday = (i === 6);
+    s += '<text x="' + x(i) + '" y="' + (H - 14) + '" text-anchor="middle" font-size="11" fill="' +
+         (isToday ? '#C8A050' : '#A8927A') + '" font-weight="' + (isToday ? '700' : '400') + '">' +
+         d.weekday + '</text>';
+  });
+
+  // 선 + 점
+  const pts = {};
+  [['neg', NEG_LINE], ['pos', POS_LINE]].forEach(pair => {
+    const key = pair[0], lineColor = pair[1];
+    pts[key] = series.map((day, i) => {
+      const p = day[key];
+      return p ? { x: x(i), y: y(p.intensity), color: p.color, label: p.label } : null;
+    });
+
+    segmentsOf(pts[key]).forEach(seg => {
+      s += '<polyline fill="none" stroke="' + lineColor + '" stroke-width="2" ' +
+           'stroke-linecap="round" stroke-linejoin="round" points="' +
+           seg.map(p => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ') + '"/>';
+    });
+
+    pts[key].forEach(p => {
+      if (!p) return;
+      s += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) +
+           '" r="4.5" fill="' + p.color + '" stroke="#FFFFFF" stroke-width="1.5"/>';
+    });
+  });
+
+  // 감정 이름. 위쪽 점은 위에, 아래쪽 점은 아래에 붙여서 서로 겹치지 않게 한다.
+  // 선을 지나갈 때가 있어서 글자 뒤에 흰 테두리를 깔아 읽히게 한다
+  function nameTag(p, above) {
+    return '<text x="' + p.x.toFixed(1) + '" y="' + (above ? p.y - 8 : p.y + 16).toFixed(1) +
+           '" text-anchor="middle" font-size="9" font-weight="500"' +
+           ' paint-order="stroke" stroke="#FFFFFF" stroke-width="2.5" stroke-linejoin="round"' +
+           ' fill="' + mix(p.color, '#2E2018', 0.35) + '">' + p.label + '</text>';
+  }
+
+  for (let i = 0; i < 7; i++) {
+    const n = pts.neg[i], q = pts.pos[i];
+    if (n && q) s += nameTag(n, n.y <= q.y) + nameTag(q, n.y > q.y);
+    else if (n) s += nameTag(n, true);
+    else if (q) s += nameTag(q, false);
+  }
+
+  s += '</svg>';
+  return s;
+}
+
+function renderWeek() {
+  const days = last7Days();
+  const entries = loadStore().entries;
+
+  const first = days[0].date, last = days[6].date;
+  document.getElementById('weekRange').textContent =
+    (first.getMonth() + 1) + '/' + first.getDate() + ' – ' + (last.getMonth() + 1) + '/' + last.getDate();
+
+  const series = days.map(d => ({
+    neg: peakOf(entries, d.dateKey, 'neg'),
+    pos: peakOf(entries, d.dateKey, 'pos')
+  }));
+
+  const body = document.getElementById('weekBody');
+
+  if (series.every(d => !d.neg && !d.pos)) {
+    body.innerHTML = '<p class="entry-empty">아직 기록이 없어요</p>';
+    return;
+  }
+
+  body.innerHTML =
+    '<div class="chart-card">' + buildChart(days, series) +
+    '<div class="legend">' +
+      '<span class="legend-item"><span class="ldot" style="background:' + NEG_LINE + '"></span>힘든 감정 최고 강도</span>' +
+      '<span class="legend-item"><span class="ldot" style="background:' + POS_LINE + '"></span>편안한 감정 최고 강도</span>' +
+    '</div></div>';
+}
+
+// ── 월간 달력 ───────────────────────────────────────────────
+// 보고 있는 달. 시작은 이번 달
+const monthCursor = new Date();
+monthCursor.setDate(1);
+
+// 달력에서 펼쳐 놓은 날짜. 아무것도 안 펼쳤으면 null
+let selectedDayKey = null;
+
+// 그 날 기록 중 강도가 가장 높은 것 하나 (동점이면 나중 기록)
+function dayPeak(entries, dateKey) {
+  let best = null;
+  entries.forEach(en => {
+    if (en.dateKey !== dateKey || !en.emotion) return;
+    if (!best || en.intensity >= best.intensity) best = en;
+  });
+  return best;
+}
+
+function buildCalendar(year, month, entries) {
+  const first = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayKey = dateKeyOf(new Date());
+  const seen = [];
+
+  let html = '<div class="cal-head">' +
+    WEEKDAYS.map(w => '<span>' + w + '</span>').join('') + '</div><div class="cal-grid">';
+
+  for (let i = 0; i < first.getDay(); i++) html += '<div class="cell blank"></div>';
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const key = dateKeyOf(new Date(year, month, day));
+    const peak = dayPeak(entries, key);
+    const isToday = (key === todayKey) ? ' today' : '';
+
+    if (!peak) {
+      html += '<div class="cell none' + isToday + '"><span class="d">' + day + '</span></div>';
+      continue;
+    }
+
+    if (!seen.some(e => e.id === peak.emotion.id)) seen.push(peak.emotion);
+
+    // 강도가 셀수록 감정 색이 진해진다
+    const t = Math.max(0, Math.min(10, peak.intensity)) / 10;
+    const bg = mix('#FFFFFF', colorOf(peak.emotion.id), 0.15 + 0.85 * t);
+    const fg = t > 0.45 ? '#FFFFFF' : '#463722';
+    const isSel = (key === selectedDayKey) ? ' sel' : '';
+
+    // 기록이 있는 날만 눌러서 펼쳐볼 수 있다
+    html += '<div class="cell has' + isToday + isSel + '" data-key="' + key + '"' +
+              ' style="background:' + bg + '; color:' + fg + '">' +
+              '<span class="d">' + day + '</span>' +
+              '<span class="v">' + peak.intensity + '</span>' +
+            '</div>';
+  }
+
+  html += '</div>';
+
+  if (seen.length) {
+    html += '<div class="cal-legend">' + seen.map(e =>
+      '<span class="legend-item"><span class="ldot" style="background:' + colorOf(e.id) + '"></span>' +
+      labelOf(e.id) + '</span>').join('') + '</div>';
+  }
+
+  return '<div class="cal-card">' + html + '</div>';
+}
+
+function renderMonth() {
+  const y = monthCursor.getFullYear(), m = monthCursor.getMonth();
+  document.getElementById('monthLabel').textContent = y + '년 ' + (m + 1) + '월';
+
+  // 아직 오지 않은 달로는 넘어가지 않는다
+  const now = new Date();
+  document.getElementById('monthNext').disabled =
+    (y > now.getFullYear() || (y === now.getFullYear() && m >= now.getMonth()));
+
+  document.getElementById('monthBody').innerHTML =
+    buildCalendar(y, m, loadStore().entries);
+
+  renderDayBox();
+
+  // 기록이 하나도 없는 달에는 지우기 버튼을 보여주지 않는다
+  const wipe = document.getElementById('wipeBtn');
+  wipe.textContent = (m + 1) + '월 기록 모두 지우기';
+  wipe.classList.toggle('hidden', monthEntries(y, m).length === 0);
+}
+
+// 보고 있는 달에 속한 기록들
+function monthEntries(y, m) {
+  const prefix = y + '-' + pad(m + 1) + '-';
+  return loadStore().entries.filter(en => en.dateKey.startsWith(prefix));
+}
+
+// ── 달력에서 하루 펼쳐보기 ──────────────────────────────────
+function renderDayBox() {
+  const box = document.getElementById('dayBox');
+  box.innerHTML = '';
+  if (!selectedDayKey) return;
+
+  const entries = loadStore().entries.filter(en => en.dateKey === selectedDayKey).reverse();
+  // 그날 기록을 다 지웠으면 펼친 것도 닫는다
+  if (entries.length === 0) { selectedDayKey = null; return; }
+
+  const d = new Date(selectedDayKey + 'T00:00:00');
+  const title = document.createElement('p');
+  title.className = 'list-title';
+  title.textContent = (d.getMonth() + 1) + '월 ' + d.getDate() + '일 기록한 감정';
+  box.appendChild(title);
+
+  entries.forEach(en => box.appendChild(entryRow(en)));
+}
+
+document.getElementById('monthBody').addEventListener('click', e => {
+  const cell = e.target.closest('.cell.has');
+  if (!cell) return;
+  // 이미 펼친 날을 다시 누르면 접는다
+  selectedDayKey = (cell.dataset.key === selectedDayKey) ? null : cell.dataset.key;
+  renderMonth();
+});
+
+// 달을 옮기면 펼쳐 놓은 날은 닫는다
+document.getElementById('monthPrev').addEventListener('click', () => {
+  monthCursor.setMonth(monthCursor.getMonth() - 1);
+  selectedDayKey = null;
+  renderMonth();
+});
+document.getElementById('monthNext').addEventListener('click', () => {
+  monthCursor.setMonth(monthCursor.getMonth() + 1);
+  selectedDayKey = null;
+  renderMonth();
+});
+
+// ── 한 달 통째로 지우기 ─────────────────────────────────────
+function closeWipeSheet() {
+  document.getElementById('wipeSheet').classList.remove('open');
+}
+
+document.getElementById('wipeBtn').addEventListener('click', () => {
+  const y = monthCursor.getFullYear(), m = monthCursor.getMonth();
+  const mine = monthEntries(y, m);
+  if (mine.length === 0) return;
+  const checks = mine.filter(en => en.thoughtRecord).length;
+
+  const title = document.getElementById('wipeTitle');
+  title.replaceChildren(
+    document.createTextNode(y + '년 ' + (m + 1) + '월 기록을'),
+    document.createElement('br'),
+    document.createTextNode('모두 지울까요?')
+  );
+
+  const warn = document.createElement('span');
+  warn.className = 'warn';
+  warn.textContent = '되돌릴 수 없어요.';
+  document.getElementById('wipeNote').replaceChildren(
+    document.createTextNode(checks > 0
+      ? '기록 ' + mine.length + '개와 자동사고 점검 ' + checks + '개가 함께 사라집니다.'
+      : '기록 ' + mine.length + '개가 사라집니다.'),
+    document.createElement('br'),
+    warn
+  );
+
+  document.getElementById('wipeSheet').classList.add('open');
+});
+
+document.getElementById('wipeCancel').addEventListener('click', closeWipeSheet);
+document.getElementById('wipeSheet').addEventListener('click', e => {
+  if (e.target.id === 'wipeSheet') closeWipeSheet();
+});
+
+document.getElementById('wipeConfirm').addEventListener('click', () => {
+  const prefix = monthCursor.getFullYear() + '-' + pad(monthCursor.getMonth() + 1) + '-';
+  const store = loadStore();
+  store.entries = store.entries.filter(en => !en.dateKey.startsWith(prefix));
+  saveStore(store);
+
+  selectedDayKey = null;
+  closeWipeSheet();
+  renderList();
+  renderWeek();
+  renderMonth();
+});
+
+// ── 활성화 (사용 기간) ──────────────────────────────────────
+// 센터가 개인키로 서명한 코드를, 앱은 공개키로 검증만 한다.
+// 공개키로는 코드를 만들 수 없으므로 앱에 넣어도 안전하다.
+//
+// !! 배포 전에 반드시 아래에 공개키를 넣을 것.
+//    null로 두면 잠금이 꺼진 채로 누구나 쓸 수 있다.
+//    공개키는 admin/issue.html에서 만든다.
+const ACTIVATION_PUBLIC_KEY = {"kty":"EC","crv":"P-256","x":"jg0Lhuq-HXfXjDLPvm-N-IN6kz7w8Z1c8XQfGZjS8Ls","y":"RfqbKgx-Y-m_DV_HV5uHkJ73Ba47KTnFivFbeuL0nvg"};
+
+const LICENSE_KEY = 'cbt_diary_license';
+const SIGN_ALG = { name: 'ECDSA', hash: 'SHA-256' };
+const KEY_ALG = { name: 'ECDSA', namedCurve: 'P-256' };
+
+function b64urlToBytes(s) {
+  const pad = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(pad + '==='.slice((pad.length + 3) % 4));
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// 코드 본문은 5바이트로 눌러 담는다. 서명 64바이트는 줄일 수 없다
+//   [0] 형식 번호 | [1..2] 만료일(2020-01-01부터 며칠째) | [3..4] 일련번호
+const CODE_EPOCH = Date.UTC(2020, 0, 1);
+
+function unpackPayload(b) {
+  if (b.length !== 5 || b[0] !== 1) return null;
+  const d = new Date(CODE_EPOCH + (((b[1] << 8) | b[2]) * 86400000));
+  return {
+    exp: d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()),
+    sn: String((b[3] << 8) | b[4])
+  };
+}
+
+// 서명이 맞으면 {exp, sn}, 아니면 null
+async function verifyCode(code) {
+  if (!ACTIVATION_PUBLIC_KEY) return null;
+  const s = String(code).replace(/\s+/g, '');
+  if (!s) return null;
+
+  try {
+    let payload, sig, info;
+
+    if (s.indexOf('.') >= 0) {
+      // 구버전 코드(본문이 JSON이던 시절). 이미 나눠준 코드가 죽지 않게 남겨둔다
+      const parts = s.split('.');
+      if (parts.length !== 2) return null;
+      payload = b64urlToBytes(parts[0]);
+      sig = b64urlToBytes(parts[1]);
+      const data = JSON.parse(new TextDecoder().decode(payload));
+      if (!data || !/^\d{4}-\d{2}-\d{2}$/.test(data.exp)) return null;
+      info = { exp: data.exp, sn: String(data.sn || '') };
+    } else {
+      const all = b64urlToBytes(s);
+      if (all.length !== 69) return null;
+      payload = all.slice(0, 5);
+      sig = all.slice(5);
+      info = unpackPayload(payload);
+      if (!info) return null;
+    }
+
+    const key = await crypto.subtle.importKey('jwk', ACTIVATION_PUBLIC_KEY, KEY_ALG, false, ['verify']);
+    if (!(await crypto.subtle.verify(SIGN_ALG, key, sig, payload))) return null;
+    return info;
+  } catch (e) {
+    return null;
+  }
+}
+
+function loadLicense() {
+  try { return JSON.parse(localStorage.getItem(LICENSE_KEY)); }
+  catch (e) { return null; }
+}
+
+// 서명 검증은 비동기라 화면이 늦게 뜬다.
+// 저장해 둔 만료일로 먼저 판단하고, 서명은 뒤에서 다시 확인한다
+function licenseState() {
+  if (!ACTIVATION_PUBLIC_KEY) return { state: 'off' };
+
+  const rec = loadLicense();
+  if (!rec || !rec.exp) return { state: 'none' };
+
+  const now = new Date();
+  // 시계를 되돌려 기간을 늘리는 것을 막는다
+  if (rec.lastSeen && now.getTime() < new Date(rec.lastSeen).getTime() - 86400000) {
+    return { state: 'clock', exp: rec.exp };
+  }
+  if (now > new Date(rec.exp + 'T23:59:59')) return { state: 'expired', exp: rec.exp };
+  return { state: 'active', exp: rec.exp, sn: rec.sn };
+}
+
+function touchLicense() {
+  const rec = loadLicense();
+  if (!rec) return;
+  const now = new Date();
+  if (!rec.lastSeen || now > new Date(rec.lastSeen)) {
+    rec.lastSeen = now.toISOString();
+    localStorage.setItem(LICENSE_KEY, JSON.stringify(rec));
+  }
+}
+
+let locked = false;
+
+function applyLock() {
+  const st = licenseState();
+  locked = (st.state !== 'off' && st.state !== 'active');
+
+  const banner = document.getElementById('lockBanner');
+  banner.classList.toggle('show', locked);
+
+  if (locked) {
+    const text = st.state === 'expired'
+      ? '사용 기간이 ' + st.exp + '에 끝났어요.\n지난 기록과 통계는 그대로 보실 수 있어요.'
+      : st.state === 'clock'
+        ? '기기 시간이 맞지 않아요.\n시간을 바로잡거나 코드를 다시 입력해 주세요.'
+        : '활성화 코드를 입력하면 기록을 시작할 수 있어요.';
+    document.getElementById('lockText').textContent = text;
+  }
+
+  document.querySelectorAll('.emotion-btn').forEach(b => { b.disabled = locked; });
+  if (locked) resetWatch();
+
+  const row = document.getElementById('licenseRow');
+  row.classList.toggle('hidden', st.state !== 'active');
+  if (st.state === 'active') {
+    document.getElementById('licenseUntil').replaceChildren(
+      document.createTextNode('사용 기간 '),
+      Object.assign(document.createElement('b'), { textContent: st.exp }),
+      document.createTextNode('까지')
+    );
+  }
+
+  renderList();   // 점검 버튼도 잠금 상태에 맞춘다
+}
+
+// 저장된 코드의 서명을 뒤에서 다시 확인한다.
+// 만료일만 고쳐 넣은 기록은 여기서 걸린다
+async function recheckLicense() {
+  if (!ACTIVATION_PUBLIC_KEY) return;
+  const rec = loadLicense();
+  if (!rec || !rec.code) return;
+  const res = await verifyCode(rec.code);
+  if (!res || res.exp !== rec.exp) {
+    localStorage.removeItem(LICENSE_KEY);
+    applyLock();
+  } else {
+    touchLicense();
+  }
+}
+
+function openActSheet() {
+  document.getElementById('actInput').value = '';
+  document.getElementById('actMsg').textContent = '';
+  document.getElementById('actMsg').classList.remove('err');
+  document.getElementById('actSheet').classList.add('open');
+}
+function closeActSheet() {
+  document.getElementById('actSheet').classList.remove('open');
+}
+
+document.getElementById('lockOpen').addEventListener('click', openActSheet);
+document.getElementById('licenseAgain').addEventListener('click', openActSheet);
+document.getElementById('actCancel').addEventListener('click', closeActSheet);
+document.getElementById('actSheet').addEventListener('click', e => {
+  if (e.target.id === 'actSheet') closeActSheet();
+});
+
+document.getElementById('actConfirm').addEventListener('click', async () => {
+  const msg = document.getElementById('actMsg');
+  const code = document.getElementById('actInput').value.trim();
+  if (!code) {
+    msg.textContent = '코드를 붙여넣어 주세요';
+    msg.classList.add('err');
+    return;
+  }
+
+  const res = await verifyCode(code);
+  if (!res) {
+    msg.textContent = '올바른 코드가 아니에요';
+    msg.classList.add('err');
+    return;
+  }
+  if (new Date() > new Date(res.exp + 'T23:59:59')) {
+    msg.textContent = '이미 ' + res.exp + '에 만료된 코드예요';
+    msg.classList.add('err');
+    return;
+  }
+
+  storeLicense(code, res);
+  closeActSheet();
+  applyLock();
+  showBackupMsg('', false);
+});
+
+function storeLicense(code, res) {
+  const now = new Date().toISOString();
+  localStorage.setItem(LICENSE_KEY, JSON.stringify({
+    code: code, exp: res.exp, sn: res.sn, activatedAt: now, lastSeen: now
+  }));
+}
+
+// 활성화 링크(주소 끝 #a=코드)로 열면 코드를 입력하지 않아도 된다.
+// #뒤는 서버로 전송되지 않으므로 코드가 밖으로 새지 않는다
+async function activateFromLink() {
+  const m = location.hash.match(/^#a=([A-Za-z0-9\-_]+)$/);
+  if (!m) return;
+
+  const code = m[1];
+  // 주소창에 코드가 남지 않게 지운다 (file://에서는 막힐 수 있다)
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+
+  const res = await verifyCode(code);
+  if (!res) return showLinkResult('링크의 코드가 올바르지 않아요', false);
+  if (new Date() > new Date(res.exp + 'T23:59:59')) {
+    return showLinkResult('이 링크는 ' + res.exp + '에 만료됐어요', false);
+  }
+
+  // 이미 더 긴 기간이 있으면 실수로 짧아지지 않게 그대로 둔다
+  const cur = licenseState();
+  if (cur.state === 'active' && cur.exp >= res.exp) {
+    return showLinkResult('이미 ' + cur.exp + '까지 쓰실 수 있어요', true);
+  }
+
+  storeLicense(code, res);
+  applyLock();
+  showLinkResult('활성화됐어요. ' + res.exp + '까지 쓰실 수 있어요', true);
+}
+
+// 앱이 이미 열려 있을 때 링크를 누르면 주소의 # 만 바뀌고 다시 로드되지 않는다.
+// 그때도 활성화되게 한다
+window.addEventListener('hashchange', activateFromLink);
+
+function showLinkResult(text, ok) {
+  const banner = document.getElementById('lockBanner');
+  if (!ok) {   // 실패하면 평소 잠금 안내에 사유만 덧붙인다
+    applyLock();
+    document.getElementById('lockText').textContent = text;
+    return;
+  }
+  banner.classList.add('show', 'ok');
+  document.getElementById('lockText').textContent = text;
+  document.getElementById('lockOpen').style.display = 'none';
+  setTimeout(() => {
+    banner.classList.remove('ok');
+    document.getElementById('lockOpen').style.display = '';
+    applyLock();
+  }, 4000);
+}
+
+// ── 백업: 내보내기 / 가져오기 ────────────────────────────────
+// 서버로 보내지 않는다. 파일은 기기 안에서만 오간다
+const backupMsg = document.getElementById('backupMsg');
+
+function showBackupMsg(text, isError) {
+  backupMsg.textContent = text;
+  backupMsg.classList.toggle('err', !!isError);
+}
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const store = loadStore();
+  if (store.entries.length === 0) {
+    showBackupMsg('내보낼 기록이 없어요', true);
+    return;
+  }
+
+  const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '감정기록_' + dateKeyOf(new Date()) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  showBackupMsg('기록 ' + store.entries.length + '개를 파일로 내보냈어요', false);
+});
+
+// 가져온 파일에서 쓸 수 있는 기록만 골라낸다
+function validEntries(data) {
+  if (!data || data.schemaVersion !== 1 || !Array.isArray(data.entries)) return null;
+  return data.entries.filter(en =>
+    en && typeof en.id === 'string' && typeof en.dateKey === 'string' &&
+    en.emotion && typeof en.emotion.id === 'string' &&
+    typeof en.emotion.label === 'string' &&
+    (en.emotion.valence === 'neg' || en.emotion.valence === 'pos') &&
+    typeof en.intensity === 'number' && en.intensity >= 0 && en.intensity <= 10
+  );
+}
+
+let pendingImport = null;
+
+document.getElementById('importBtn').addEventListener('click', () => {
+  document.getElementById('importFile').click();
+});
+
+document.getElementById('importFile').addEventListener('change', e => {
+  const file = e.target.files[0];
+  e.target.value = '';   // 같은 파일을 다시 골라도 열리게
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onerror = () => showBackupMsg('파일을 읽지 못했어요', true);
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(reader.result);
+    } catch (err) {
+      showBackupMsg('감정 기록 파일이 아니에요', true);
+      return;
+    }
+
+    const valid = validEntries(data);
+    if (valid === null) {
+      showBackupMsg('감정 기록 파일이 아니에요', true);
+      return;
+    }
+
+    const dropped = data.entries.length - valid.length;
+    const have = new Set(loadStore().entries.map(en => en.id));
+    const fresh = valid.filter(en => !have.has(en.id));
+
+    if (fresh.length === 0) {
+      showBackupMsg(valid.length > 0 ? '이미 다 가지고 있는 기록이에요' : '가져올 기록이 없어요', true);
+      return;
+    }
+
+    pendingImport = fresh;
+
+    document.getElementById('importTitle').textContent = '기록 ' + fresh.length + '개를 가져올까요?';
+
+    const lines = [];
+    const dup = valid.length - fresh.length;
+    if (dup > 0) lines.push('이미 있는 ' + dup + '개는 건너뜁니다.');
+    if (dropped > 0) lines.push('알아볼 수 없는 ' + dropped + '개는 빼고 가져옵니다.');
+    lines.push('지금 기록은 지워지지 않고 그대로 남습니다.');
+
+    const note = document.getElementById('importNote');
+    note.replaceChildren();
+    lines.forEach((line, i) => {
+      if (i > 0) note.appendChild(document.createElement('br'));
+      note.appendChild(document.createTextNode(line));
+    });
+
+    document.getElementById('importSheet').classList.add('open');
+  };
+  reader.readAsText(file);
+});
+
+function closeImportSheet() {
+  document.getElementById('importSheet').classList.remove('open');
+  pendingImport = null;
+}
+
+document.getElementById('importCancel').addEventListener('click', closeImportSheet);
+document.getElementById('importSheet').addEventListener('click', e => {
+  if (e.target.id === 'importSheet') closeImportSheet();
+});
+
+document.getElementById('importConfirm').addEventListener('click', () => {
+  if (!pendingImport) return;
+  const added = pendingImport.length;
+
+  const store = loadStore();
+  store.entries = store.entries.concat(pendingImport);
+  // 목록·그래프가 시간순을 전제하므로 id(ISO)로 다시 정렬한다
+  store.entries.sort((a, b) => a.id < b.id ? -1 : (a.id > b.id ? 1 : 0));
+  saveStore(store);
+
+  closeImportSheet();
+  selectedDayKey = null;
+  renderList();
+  renderWeek();
+  renderMonth();
+  showBackupMsg('기록 ' + added + '개를 가져왔어요', false);
+});
+
+// ── 화면 전환 ───────────────────────────────────────────────
+const TABS = ['Record', 'Week', 'Month'];
+const SCREENS = TABS.concat(['Check', 'Review']);
+
+function showScreen(which) {
+  SCREENS.forEach(s => {
+    document.getElementById('screen' + s).classList.toggle('hidden', s !== which);
+  });
+  TABS.forEach(s => {
+    document.getElementById('tab' + s).classList.toggle('active', s === which);
+  });
+  // 점검 중이거나 다시 읽는 중에는 다른 화면으로 새지 않게 위 탭을 감춘다
+  document.getElementById('tabs').classList.toggle('hidden', which === 'Check' || which === 'Review');
+  if (which === 'Week') renderWeek();
+  if (which === 'Month') {
+    renderMonth();
+    showBackupMsg('', false);   // 지난 백업 안내가 남아 있지 않게
+  }
+  window.scrollTo(0, 0);
+}
+TABS.forEach(s => {
+  document.getElementById('tab' + s).addEventListener('click', () => showScreen(s));
+});
+
+// ── 자동사고 점검 ───────────────────────────────────────────
+// 목록과 설명은 reference/thought_check.html에서 그대로 옮겼다
+const COG_ERRORS = [
+  { name:"흑백논리의 오류", desc:"전부 혹은 전무의 사고 (All of nothing) 라고 불리는 흑백논리는 선택지 사이에 다수의 연속적 개념이 있다고 생각하기보다 흑과 백처럼 '이것' 아니면 '저것', 두 개의 범주로 나누어 상황을 본다." },
+  { name:"재앙화", desc:"미래에 대한 예상을 현실적 고려 없이 파국적이고 부정적으로 생각하는 오류이다." },
+  { name:"명명하기", desc:"라벨링(Labeling)이라고도 하는 명명하기는 자신이나 다른 사람 혹은 어떤 상황에 고정적이며 부정적인 이름을 붙인다." },
+  { name:"과대평가/과소평가", desc:"어떤 상황이나 자신을 평가할 때 부정적인 측면을 강조하고 긍정적인 측면을 최소화한다." },
+  { name:"감정적 추론", desc:"근거를 고려하지 않거나 무시하고 자신의 감정의 느낌에 따라 결론을 내린다." },
+  { name:"정신적 여과", desc:"'선택적 추상', '필터링'이라고 하며 전체 상황을 보는 대신에 자신이 집중하는 세세한 것에 지나치게 관심을 가진다." },
+  { name:"독심술의 오류", desc:"다른사람들이 생각하는 것을 자신이 알 수 있다고 생각하는 오류이다." },
+  { name:"지나친 일반화", desc:"우연히 일어난 사건을 일반화시켜 부정적인 결론을 내린다." },
+  { name:"자기 탓", desc:"다른 사람의 부정적인 행동의 이유에 대해 타당한 근거를 고려하지 않고 자신 때문에 타인이 부정적인 행동을 하는 것이라 믿는다." },
+  { name:"당위진술", desc:"행동에 대한 확실하고 고정된 사고를 가지고 있으며, 충족되지 못할 때 얼마나 나쁜지 과대평가한다." },
+  { name:"터널시야", desc:"어떤 상황의 부정적인 측면만 본다." },
+];
+
+const CHK_CARDS = ['chk1', 'chk2', 'chk3', 'chk4', 'chkResult'];
+
+// 화면의 입력칸 ↔ 저장 칸 짝
+const CHK_FIELDS = {
+  situation:   'chkSituation',
+  autoThought: 'chkAutoThought',
+  evidence:    'chkEvidence',
+  alternative: 'chkAlternative',
+  worst:       'chkWorst',
+  best:        'chkBest',
+  realistic:   'chkRealistic',
+  newThought:  'chkNewThought'
+};
+
+let chkEntryId = null;    // 지금 점검 중인 기록
+let chkErrors = [];       // 고른 인지오류 이름들
+let chkAfter = null;      // 점검 후 감정 (EMOTIONS 중 하나)
+
+// 점검·다시 읽기를 끝내면 열기 전에 보던 화면으로 되돌아간다.
+// 달력에서 지난 기록을 열었을 때 기록 화면으로 튕기지 않게 하려는 것
+let returnTo = 'Record';
+function markReturn() {
+  returnTo = document.getElementById('screenMonth').classList.contains('hidden') ? 'Record' : 'Month';
+}
+
+function emptyThoughtRecord() {
+  return {
+    status: 'pending',
+    situation: '', autoThought: '', errors: [],
+    evidence: '', alternative: '',
+    worst: '', best: '', realistic: '',
+    newThought: '', emotionAfter: null, intensityAfter: null,
+    completedAt: ''
+  };
+}
+
+function val(id) { return document.getElementById(id).value.trim(); }
+
+// ── 인지오류 칩 ──
+function renderErrChips() {
+  const box = document.getElementById('chkErrChips');
+  box.innerHTML = '';
+  COG_ERRORS.forEach(e => {
+    const chip = document.createElement('div');
+    chip.className = 'err-chip' + (chkErrors.includes(e.name) ? ' sel' : '');
+    chip.textContent = e.name;
+    chip.onclick = () => {
+      const i = chkErrors.indexOf(e.name);
+      if (i >= 0) chkErrors.splice(i, 1);
+      else chkErrors.push(e.name);
+      renderErrChips();
+      renderGlossary();
+    };
+    box.appendChild(chip);
+  });
+}
+
+function renderGlossary() {
+  const g = document.getElementById('chkGlossary');
+  g.innerHTML = '';
+  COG_ERRORS.forEach(e => {
+    const row = document.createElement('div');
+    row.className = 'g-item' + (chkErrors.includes(e.name) ? ' sel' : '');
+    const b = document.createElement('b');
+    b.textContent = e.name;
+    const s = document.createElement('span');
+    s.textContent = e.desc;
+    row.appendChild(b);
+    row.appendChild(s);
+    g.appendChild(row);
+  });
+}
+
+document.getElementById('chkGlossaryBtn').addEventListener('click', () => {
+  const on = document.getElementById('chkGlossary').classList.toggle('show');
+  document.getElementById('chkGlossaryBtn').textContent = on ? '설명 닫기' : '설명 보기';
+});
+
+// ── 점검 후 감정 ──
+function renderAfterEmotions() {
+  const box = document.getElementById('chkEmoAfter');
+  box.innerHTML = '';
+  [['neg', '힘든 감정'], ['pos', '편안해진 감정']].forEach(pair => {
+    const wrap = document.createElement('div');
+    wrap.className = 'emo-cat';
+
+    const lab = document.createElement('div');
+    lab.className = 'emo-cat-label ' + pair[0];
+    lab.textContent = pair[1];
+    wrap.appendChild(lab);
+
+    const chips = document.createElement('div');
+    chips.className = 'emo-chips';
+    EMOTIONS.filter(e => e.valence === pair[0]).forEach(e => {
+      const chip = document.createElement('div');
+      chip.className = 'emo-chip' + (chkAfter && chkAfter.id === e.id ? ' sel-' + e.valence : '');
+      chip.textContent = e.label;
+      chip.onclick = () => {
+        chkAfter = (chkAfter && chkAfter.id === e.id) ? null : e;
+        renderAfterEmotions();
+      };
+      chips.appendChild(chip);
+    });
+    wrap.appendChild(chips);
+    box.appendChild(wrap);
+  });
+  document.getElementById('chkAfterWrap').classList.toggle('show', chkAfter !== null);
+}
+
+const chkAfterRange = document.getElementById('chkAfterRange');
+chkAfterRange.addEventListener('input', () => {
+  document.getElementById('chkAfterVal').textContent = chkAfterRange.value;
+});
+
+// ── 단계 이동 ──
+function showChkStep(n) {
+  CHK_CARDS.forEach((id, i) => {
+    document.getElementById(id).classList.toggle('hidden', i !== n);
+  });
+  for (let i = 0; i < CHK_CARDS.length; i++) {
+    document.getElementById('chkDot' + i).classList.toggle('active', i <= n);
+  }
+  window.scrollTo(0, 0);
+}
+
+function checkBtn1() {
+  document.getElementById('chkBtn1').disabled = (val('chkAutoThought').length === 0);
+}
+document.getElementById('chkAutoThought').addEventListener('input', checkBtn1);
+
+function checkBtn4() {
+  document.getElementById('chkBtn4').disabled = (val('chkNewThought').length === 0);
+}
+document.getElementById('chkNewThought').addEventListener('input', checkBtn4);
+
+// ── 저장 ──
+// 쓴 데까지 그때그때 저장해두면, 나갔다 와도 이어서 쓸 수 있다
+function persistDraft(status) {
+  const store = loadStore();
+  const entry = store.entries.find(en => en.id === chkEntryId);
+  if (!entry) return;
+
+  // 아무것도 안 쓰고 나갔으면 "이어서 하기"로 바뀌지 않게 그냥 둔다
+  const blank = Object.keys(CHK_FIELDS).every(key => val(CHK_FIELDS[key]) === '')
+    && chkErrors.length === 0 && chkAfter === null;
+  if (blank && !entry.thoughtRecord) return;
+
+  const rec = entry.thoughtRecord || emptyThoughtRecord();
+  Object.keys(CHK_FIELDS).forEach(key => { rec[key] = val(CHK_FIELDS[key]); });
+  rec.errors = chkErrors.slice();
+  rec.emotionAfter = chkAfter ? { id: chkAfter.id, label: chkAfter.label, valence: chkAfter.valence } : null;
+  rec.intensityAfter = chkAfter ? Number(chkAfterRange.value) : null;
+  rec.status = status;
+  if (status === 'done') rec.completedAt = localISO(new Date());
+
+  entry.thoughtRecord = rec;
+  saveStore(store);
+}
+
+function exitCheck(status) {
+  persistDraft(status);
+  chkEntryId = null;
+  renderList();
+  renderWeek();
+  renderMonth();
+  showScreen(returnTo);
+}
+
+document.querySelectorAll('.chk-exit').forEach(btn => {
+  btn.addEventListener('click', () => exitCheck('pending'));
+});
+
+// ── 열기 ──
+function openCheck(entry) {
+  if (locked) return;
+  markReturn();
+  chkEntryId = entry.id;
+  const rec = entry.thoughtRecord || emptyThoughtRecord();
+
+  Object.keys(CHK_FIELDS).forEach(key => {
+    document.getElementById(CHK_FIELDS[key]).value = rec[key] || '';
+  });
+  chkErrors = Array.isArray(rec.errors) ? rec.errors.slice() : [];
+  chkAfter = rec.emotionAfter ? EMOTIONS.find(e => e.id === rec.emotionAfter.id) || null : null;
+  chkAfterRange.value = rec.intensityAfter === null || rec.intensityAfter === undefined ? 5 : rec.intensityAfter;
+  document.getElementById('chkAfterVal').textContent = chkAfterRange.value;
+
+  // 이미 받은 감정과 세기는 다시 묻지 않고 위에 보여만 준다
+  const ctx = document.getElementById('chkContext');
+  ctx.innerHTML = '';
+  const dot = document.createElement('span');
+  dot.className = 'cdot';
+  dot.style.background = colorOf(entry.emotion.id);
+  const txt = document.createElement('span');
+  txt.style.color = colorOf(entry.emotion.id);
+  txt.textContent = labelOf(entry.emotion.id) + ' · 세기 ' + entry.intensity;
+  ctx.appendChild(dot);
+  ctx.appendChild(txt);
+
+  renderErrChips();
+  renderGlossary();
+  renderAfterEmotions();
+  document.getElementById('chkCompareBox').classList.add('hidden');
+  document.getElementById('chkCompareBtn').style.display = '';
+  checkBtn1();
+  checkBtn4();
+
+  showScreen('Check');
+  showChkStep(0);
+}
+
+// ── 단계 버튼 ──
+document.getElementById('chkBtn1').addEventListener('click', () => {
+  document.getElementById('chkEchoSituation').textContent = val('chkSituation') || '그 상황';
+  document.getElementById('chkEchoThought').textContent = '"' + val('chkAutoThought') + '"';
+  persistDraft('pending');
+  showChkStep(1);
+});
+document.getElementById('chkBack2').addEventListener('click', () => showChkStep(0));
+
+document.getElementById('chkBtn2').addEventListener('click', () => showChkStep(2));
+document.getElementById('chkBack3').addEventListener('click', () => showChkStep(1));
+
+document.getElementById('chkBtn3').addEventListener('click', () => {
+  persistDraft('pending');
+  showChkStep(3);
+});
+document.getElementById('chkBack4').addEventListener('click', () => showChkStep(2));
+
+document.getElementById('chkBtn4').addEventListener('click', () => {
+  document.getElementById('chkROld').textContent = '"' + val('chkAutoThought') + '"';
+  document.getElementById('chkRNew').textContent = '"' + val('chkNewThought') + '"';
+  persistDraft('pending');
+  showChkStep(4);
+});
+
+// 전·후 비교 상자에 감정 하나를 넣는다 (점검 결과 화면과 다시 읽기 화면이 같이 쓴다)
+function cmpTag(boxId, label, intensity) {
+  const box = document.getElementById(boxId);
+  if (!label) {
+    const empty = document.createElement('span');
+    empty.className = 'emo-cmp-empty';
+    empty.textContent = '선택한 감정 없음';
+    box.appendChild(empty);
+    return;
+  }
+  const t = document.createElement('span');
+  t.className = 'emo-cmp-tag';
+  t.textContent = label;
+  const n = document.createElement('span');
+  n.className = 'int';
+  n.textContent = intensity;
+  t.appendChild(n);
+  box.appendChild(t);
+}
+
+document.getElementById('chkCompareBtn').addEventListener('click', () => {
+  const store = loadStore();
+  const entry = store.entries.find(en => en.id === chkEntryId);
+
+  document.getElementById('chkCmpBefore').innerHTML = '';
+  document.getElementById('chkCmpAfter').innerHTML = '';
+
+  cmpTag('chkCmpBefore', entry ? labelOf(entry.emotion.id) : '', entry ? entry.intensity : '');
+  cmpTag('chkCmpAfter', chkAfter ? chkAfter.label : '', chkAfterRange.value);
+
+  document.getElementById('chkCompareBox').classList.remove('hidden');
+  document.getElementById('chkCompareBtn').style.display = 'none';
+});
+
+document.getElementById('chkDone').addEventListener('click', () => exitCheck('done'));
+
+// ── 이어서 점검할지 물어보기 ────────────────────────────────
+let askEntryId = null;
+
+function openAskSheet(entry) {
+  if (locked) return;
+  askEntryId = entry.id;
+  document.getElementById('askPreview').replaceChildren(...entryCells(entry));
+  document.getElementById('askSheet').classList.add('open');
+}
+function closeAskSheet() {
+  askEntryId = null;
+  document.getElementById('askSheet').classList.remove('open');
+}
+
+// 나중에 하겠다고 해도 따로 표시할 게 없다.
+// 힘든 감정이면 목록에 이미 시작 버튼이 붙어 있다
+document.getElementById('askLater').addEventListener('click', closeAskSheet);
+document.getElementById('askSheet').addEventListener('click', e => {
+  if (e.target.id === 'askSheet') closeAskSheet();
+});
+document.getElementById('askStart').addEventListener('click', () => {
+  const store = loadStore();
+  const entry = store.entries.find(en => en.id === askEntryId);
+  closeAskSheet();
+  if (entry) openCheck(entry);
+});
+
+// ── 다 한 점검 다시 읽기 ────────────────────────────────────
+// 고칠 수 없고 읽기만 한다. 쓴 게 없는 칸은 아예 보여주지 않는다
+function revField(label, text) {
+  const wrap = document.createElement('div');
+  wrap.className = 'rev-field';
+
+  const k = document.createElement('div');
+  k.className = 'k';
+  k.textContent = label;
+
+  const v = document.createElement('div');
+  v.className = 'v';
+  v.textContent = text;
+
+  wrap.appendChild(k);
+  wrap.appendChild(v);
+  return wrap;
+}
+
+function openReview(entry) {
+  const rec = entry.thoughtRecord;
+  if (!rec) return;
+  markReturn();
+
+  document.getElementById('revWhen').textContent = formatWhen(entry) + ' 기록';
+
+  const ctx = document.getElementById('revContext');
+  ctx.innerHTML = '';
+  const dot = document.createElement('span');
+  dot.className = 'cdot';
+  dot.style.background = colorOf(entry.emotion.id);
+  const txt = document.createElement('span');
+  txt.style.color = colorOf(entry.emotion.id);
+  txt.textContent = labelOf(entry.emotion.id) + ' · 세기 ' + entry.intensity;
+  ctx.appendChild(dot);
+  ctx.appendChild(txt);
+
+  document.getElementById('revOld').textContent = '"' + rec.autoThought + '"';
+  document.getElementById('revNew').textContent = '"' + rec.newThought + '"';
+
+  const fields = document.getElementById('revFields');
+  fields.innerHTML = '';
+
+  if (rec.situation) fields.appendChild(revField('상황', rec.situation));
+
+  if (rec.errors && rec.errors.length) {
+    const wrap = document.createElement('div');
+    wrap.className = 'rev-field';
+    const k = document.createElement('div');
+    k.className = 'k';
+    k.textContent = '인지오류';
+    const tags = document.createElement('div');
+    tags.className = 'tags';
+    rec.errors.forEach(name => {
+      const t = document.createElement('span');
+      t.textContent = name;
+      tags.appendChild(t);
+    });
+    wrap.appendChild(k);
+    wrap.appendChild(tags);
+    fields.appendChild(wrap);
+  }
+
+  if (rec.evidence) fields.appendChild(revField('증거', rec.evidence));
+  if (rec.alternative) fields.appendChild(revField('다른 가능성', rec.alternative));
+
+  if (rec.worst || rec.best || rec.realistic) {
+    const wrap = document.createElement('div');
+    wrap.className = 'rev-field';
+    const k = document.createElement('div');
+    k.className = 'k';
+    k.textContent = '그 생각이 사실이었다면';
+    wrap.appendChild(k);
+
+    const v = document.createElement('div');
+    v.className = 'v';
+    [['worst', '최악', rec.worst], ['best', '최상', rec.best], ['real', '현실적', rec.realistic]]
+      .forEach(([cls, label, text]) => {
+        if (!text) return;
+        const row = document.createElement('div');
+        row.className = 'rev-outcome';
+        const lab = document.createElement('span');
+        lab.className = 'lab ' + cls;
+        lab.textContent = label;
+        const t = document.createElement('span');
+        t.className = 't';
+        t.textContent = text;
+        row.appendChild(lab);
+        row.appendChild(t);
+        v.appendChild(row);
+      });
+    wrap.appendChild(v);
+    fields.appendChild(wrap);
+  }
+
+  document.getElementById('revCmpBefore').innerHTML = '';
+  document.getElementById('revCmpAfter').innerHTML = '';
+  cmpTag('revCmpBefore', labelOf(entry.emotion.id), entry.intensity);
+  cmpTag('revCmpAfter', rec.emotionAfter ? rec.emotionAfter.label : '', rec.intensityAfter);
+
+  showScreen('Review');
+}
+
+document.getElementById('revBack').addEventListener('click', () => showScreen(returnTo));
+
+// ── 초기화 ──────────────────────────────────────────────────
+function resetWatch() {
+  selected = null;
+  clearTimeout(pulseTimer);   // 초기화 후 결과가 다시 떠오르지 않게
+  document.body.className = '';
+  ambient.classList.remove('on');
+  watchWrap.classList.remove('dragging');
+
+  document.querySelectorAll('.emotion-btn').forEach(btn => {
+    btn.classList.remove('active');
+    btn.style.border = '1.5px solid #E0D8CC';
+    btn.style.background = '#FFFFFF';
+    btn.style.color = '#82694A';
+    btn.style.boxShadow = 'none';
+  });
+
+  document.getElementById('crown').style.boxShadow = 'none';
+  document.getElementById('outerGlow').style.boxShadow = '0 0 30px rgba(200,160,80,0), 0 0 60px rgba(70,55,42,0.16)';
+  document.getElementById('watchClock').style.color = '';
+  document.getElementById('resultName').style.color = '';
+  document.getElementById('resultLevel').style.color = '';
+  watchScreen.style.background = SCREEN_IDLE_BG;
+
+  ringFill.style.strokeDashoffset = '100';
+  ringFill.style.stroke = '';
+  ringFill.style.filter = 'none';
+
+  document.getElementById('watchIdle').style.display = 'flex';
+  document.getElementById('watchResult').style.display = 'none';
+  document.getElementById('watchPulse').style.display = 'none';
+
+  document.getElementById('recordCard').classList.remove('visible');
+  range.value = 5;
+  intensityVal.textContent = '5';
+  paintRange();
+}
+
+paintRange();
+renderList();
+renderWeek();
+renderMonth();
+applyLock();          // 저장된 만료일로 먼저 판단하고
+recheckLicense();     // 서명은 뒤에서 다시 확인한다
+activateFromLink();   // 활성화 링크로 열었으면 바로 활성화한다
+
+// 홈 화면 설치와 오프라인 실행. file://에서는 등록되지 않으므로 건너뛴다
+if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
