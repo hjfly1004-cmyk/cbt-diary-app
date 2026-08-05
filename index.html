@@ -399,6 +399,17 @@
     font-size: 12.5px; line-height: 1.7; color: #8A6E32;
     margin-bottom: 11px; white-space: pre-line;
   }
+  /* 복사 버튼이 막히는 브라우저가 있어서, 직접 눌러 고를 수 있게 코드도 보여준다 */
+  #installCode {
+    display: none;
+    width: 100%; border: 1px solid #E8D5A8; border-radius: 8px;
+    padding: 8px 10px; margin-bottom: 11px;
+    font-family: inherit; font-size: 11px; line-height: 1.5; color: #8A6E32;
+    background: #FFFCF5; resize: none; height: 66px;
+    word-break: break-all; -webkit-user-select: all; user-select: all;
+  }
+  #installCode.show { display: block; }
+
   .install-bar .row { display: flex; gap: 8px; justify-content: center; }
   .install-bar button {
     padding: 10px 16px; border-radius: 10px; border: none;
@@ -743,8 +754,10 @@
 
     <div class="install-bar" id="installBar">
       <p id="installText"></p>
+      <textarea id="installCode" readonly></textarea>
       <div class="row">
         <button id="installAction">설치하기</button>
+        <button id="installCopy">코드 복사</button>
         <button class="ghost" id="installClose">나중에</button>
       </div>
     </div>
@@ -2024,6 +2037,16 @@ async function activateFromLink() {
   if (!m) return;
 
   const code = m[1];
+
+  // 카톡 안의 브라우저는 홈 화면 앱과 저장 공간이 아예 다르다.
+  // 여기서 활성화해봐야 앱은 못 보므로, 됐다고 말하지 않고 옮길 길을 준다.
+  // 주소도 그대로 둔다. 크롬으로 넘길 때 코드가 붙어 있어야 한다
+  if (inAppBrowser()) {
+    pendingLinkCode = code;
+    updateInstallBar();
+    return;
+  }
+
   // 주소창에 코드가 남지 않게 지운다 (file://에서는 막힐 수 있다)
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
 
@@ -2042,6 +2065,13 @@ async function activateFromLink() {
   storeLicense(code, res);
   applyLock();
   showLinkResult('활성화됐어요. ' + res.exp + '까지 쓰실 수 있어요', true);
+
+  // 아이폰은 사파리와 홈 화면 앱의 저장 공간이 따로다. 앱에도 넣을 수 있게 남긴다.
+  // 안드로이드는 크롬과 앱이 같은 공간을 쓰므로 이 안내가 필요 없다
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !isStandalone()) {
+    pendingLinkCode = code;
+    updateInstallBar();
+  }
 }
 
 // 앱이 이미 열려 있을 때 링크를 누르면 주소의 # 만 바뀌고 다시 로드되지 않는다.
@@ -2688,6 +2718,7 @@ activateFromLink();   // 활성화 링크로 열었으면 바로 활성화한다
 // 무엇보다 먼저 알린다
 const INSTALL_HINT_KEY = 'cbt_diary_install_hint';
 let deferredInstall = null;
+let pendingLinkCode = null;   // 링크로 받았지만 아직 앱에 못 넣은 코드
 
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
@@ -2710,19 +2741,39 @@ function updateInstallBar() {
   const bar = document.getElementById('installBar');
   const text = document.getElementById('installText');
   const action = document.getElementById('installAction');
+  const copy = document.getElementById('installCopy');
   const ua = navigator.userAgent;
   const isIOS = /iPhone|iPad|iPod/.test(ua);
   const isAndroid = /Android/.test(ua);
 
+  const codeBox = document.getElementById('installCode');
   bar.classList.remove('show');
+  copy.style.display = pendingLinkCode ? '' : 'none';
+  codeBox.classList.toggle('show', !!pendingLinkCode);
+  if (pendingLinkCode) codeBox.value = pendingLinkCode;
   if (isStandalone()) return;   // 이미 설치해서 앱으로 열었다
 
   if (inAppBrowser()) {
-    text.textContent = isAndroid
-      ? '지금은 카톡 안의 브라우저로 열려 있어요.\n크롬으로 열어야 홈 화면에 둘 수 있어요.'
-      : '지금은 카톡 안의 브라우저로 열려 있어요.\n오른쪽 아래 버튼을 눌러 사파리로 열어주세요.';
+    if (pendingLinkCode) {
+      // 여기서 활성화해도 앱에 전해지지 않는다는 것을 분명히 알린다
+      text.textContent = isAndroid
+        ? '카톡 안에서는 활성화해도 홈 화면 앱에 전해지지 않아요.\n크롬으로 열거나, 코드를 복사해 앱에 붙여넣어 주세요.'
+        : '카톡 안에서는 활성화해도 홈 화면 앱에 전해지지 않아요.\n코드를 복사해 앱에 붙여넣어 주세요.';
+    } else {
+      text.textContent = isAndroid
+        ? '지금은 카톡 안의 브라우저로 열려 있어요.\n크롬으로 열어야 홈 화면에 둘 수 있어요.'
+        : '지금은 카톡 안의 브라우저로 열려 있어요.\n오른쪽 아래 버튼을 눌러 사파리로 열어주세요.';
+    }
     action.textContent = '크롬으로 열기';
     action.style.display = isAndroid ? '' : 'none';
+    bar.classList.add('show');
+    return;
+  }
+
+  // 사파리에서 활성화는 됐지만 홈 화면 앱은 저장 공간이 따로인 경우
+  if (pendingLinkCode) {
+    text.textContent = '홈 화면 앱에서도 쓰시려면\n코드를 복사해 앱에 붙여넣어 주세요.';
+    action.style.display = 'none';
     bar.classList.add('show');
     return;
   }
@@ -2758,9 +2809,33 @@ document.getElementById('installAction').addEventListener('click', async () => {
   updateInstallBar();
 });
 
+document.getElementById('installCopy').addEventListener('click', async () => {
+  if (!pendingLinkCode) return;
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(pendingLinkCode);
+    ok = true;
+  } catch (e) {
+    // 카톡 안의 브라우저 등에서 막히면 화면에 있는 상자를 골라서 복사한다
+    const box = document.getElementById('installCode');
+    try {
+      box.removeAttribute('readonly');
+      box.focus();
+      box.setSelectionRange(0, 999999);   // 아이폰은 select()만으로는 안 된다
+      ok = document.execCommand('copy');
+    } catch (e2) {
+    } finally {
+      box.setAttribute('readonly', '');
+    }
+  }
+  document.getElementById('installText').textContent = ok
+    ? '코드를 복사했어요.\n앱을 열고 "활성화 코드 입력"에 붙여넣어 주세요.'
+    : '복사가 안 됐어요.\n아래 코드를 길게 눌러 직접 복사해 주세요.';
+});
+
 document.getElementById('installClose').addEventListener('click', () => {
-  // 카톡 안내는 다시 볼 수 있어야 하므로 이번만 닫는다
-  if (!inAppBrowser()) localStorage.setItem(INSTALL_HINT_KEY, 'off');
+  // 카톡 안내와 코드 안내는 다시 볼 수 있어야 하므로 이번만 닫는다
+  if (!inAppBrowser() && !pendingLinkCode) localStorage.setItem(INSTALL_HINT_KEY, 'off');
   document.getElementById('installBar').classList.remove('show');
 });
 
