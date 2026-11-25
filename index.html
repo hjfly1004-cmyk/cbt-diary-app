@@ -1905,8 +1905,13 @@ function loadLicense() {
 
 // 서명 검증은 비동기라 화면이 늦게 뜬다.
 // 저장해 둔 만료일로 먼저 판단하고, 서명은 뒤에서 다시 확인한다
+// 개발용: 내 PC에서 파일로 열거나(file://) localhost로 열면 잠그지 않는다 (선생님 결정 2026-11-25).
+// 잠금은 공개 주소(github.io)에서만. 잠금 끈 사본을 따로 만들 필요가 없다.
+// 파일을 받아 여는 사람은 어차피 코드를 뜯어볼 수 있어 보안이 더 약해지지 않는다
+const DEV_HOST = location.protocol === 'file:' || ['localhost', '127.0.0.1', '[::1]'].indexOf(location.hostname) >= 0;
+
 function licenseState() {
-  if (!ACTIVATION_PUBLIC_KEY) return { state: 'off' };
+  if (!ACTIVATION_PUBLIC_KEY || DEV_HOST) return { state: 'off' };
 
   const rec = loadLicense();
   if (!rec || !rec.exp) return { state: 'none' };
